@@ -34,7 +34,6 @@ def get_db_config():
         raise ValueError("Missing required database configuration")
 
     connection_string = f"Driver={config['driver']};Server={config['server']};UID={config['user']};PWD={config['password']};Database={config['database']};TrustServerCertificate={config['trusted_server_certificate']};Trusted_Connection={config['trusted_connection']};"
-    logger.info(f"Using connection string: {connection_string}")
     return config, connection_string
 
 
