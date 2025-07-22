@@ -21,4 +21,7 @@ uv.lock
 
 # Distribution directories
 *.dist-info/
+.env
+
+
 
