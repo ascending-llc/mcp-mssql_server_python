@@ -2,7 +2,6 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 from dotenv import load_dotenv
-
 from mssql_mcp_server.utils.exceptions import ConfigurationError
 
 load_dotenv()
@@ -185,12 +184,12 @@ class Settings:
     def _load_server_config(self) -> ServerConfig:
         """Load server configuration from environment variables."""
         return ServerConfig(
-            transport=os.getenv("MCP_TRANSPORT", "stdio"),
-            log_level=os.getenv("LOG_LEVEL", "INFO"),
+            transport=os.getenv("FASTMCP_TRANSPORT", "stdio"),
+            log_level=os.getenv("FASTMCP_LOG_LEVEL", "INFO"),
             max_rows_limit=int(os.getenv("MAX_ROWS_LIMIT", "100")),
             enable_async=os.getenv("ENABLE_ASYNC", "true").lower() == "true",
             enable_dynamic_resources=os.getenv("ENABLE_DYNAMIC_RESOURCES", "true").lower() == "true",
-            mcp_port=int(os.getenv("MCP_PORT", "8000"))
+            mcp_port=int(os.getenv("FASTMCP_PORT", "8000"))
         )
 
 

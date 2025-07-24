@@ -52,9 +52,9 @@ RUN chown -R appuser:appuser /app
 USER appuser
 
 # Environment variables for configuration
-ENV MCP_TRANSPORT=tcp \
-    MCP_PORT=8000 \
-    LOG_LEVEL=INFO \
+ENV FASTMCP_TRANSPORT=http \
+    FASTMCP_PORT=8000 \
+    FASTMCP_LOG_LEVEL=INFO \
     CACHE_ENABLED=true \
     ENABLE_ASYNC=true \
     ENABLE_DYNAMIC_RESOURCES=true \

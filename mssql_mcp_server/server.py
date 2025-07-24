@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
+from dotenv import load_dotenv
 from fastmcp import FastMCP
 from mssql_mcp_server.config.settings import settings
 from mssql_mcp_server.database.async_connection import get_pool, close_pool
@@ -8,9 +9,11 @@ from mssql_mcp_server.handlers.async_tools import AsyncToolHandlers
 from mssql_mcp_server.utils.logger import Logger
 from mssql_mcp_server.utils.cache import cache_manager
 
+load_dotenv()
+
 logger = Logger.get_logger(__name__)
 
-app = FastMCP("mssql_mcp_server")
+app = FastMCP(name="mssql_mcp_server")
 
 
 # Static database-level resources
@@ -294,7 +297,6 @@ async def initialize_server() -> None:
         # Dynamically register resources for each table
         total_resources = await register_table_resources()
         logger.info(f"Server will expose {total_resources} dynamic resources")
-
         logger.info("Server initialization completed successfully")
 
     except Exception as e:
@@ -328,10 +330,16 @@ async def main():
 
         # Get transport configuration
         transport = settings.server.transport
+        port = settings.server.mcp_port
         logger.info(f"Starting server with transport: {transport}")
         
-        # Run the server
-        await app.run_async(transport=transport, port=settings.server.mcp_port)
+        if transport in ["http", "tcp", "sse"]:
+            logger.info(f"Using port: {port}")
+            # Explicitly pass port to override FastMCP's default behavior
+            await app.run_async(transport=transport, port=port)
+        else:
+            logger.info(f"Using {transport} transport")
+            await app.run_async(transport=transport)
 
     except KeyboardInterrupt:
         logger.info("Server shutdown requested by user")
