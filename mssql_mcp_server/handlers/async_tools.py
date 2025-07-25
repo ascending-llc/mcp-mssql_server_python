@@ -109,7 +109,7 @@ class AsyncToolHandlers:
         try:
             if limit is None:
                 limit = settings.server.max_rows_limit
-            
+
             logger.info(f"Getting data from table: {table_name} (limit: {limit})")
 
             result = await AsyncDatabaseOperations.get_table_data(table_name, limit)
@@ -135,9 +135,9 @@ class AsyncToolHandlers:
         """Test the database connection."""
         try:
             logger.info("Testing database connection")
-            
+
             is_connected = await AsyncDatabaseOperations.test_connection()
-            
+
             if is_connected:
                 # Get additional connection info
                 db_info = await AsyncDatabaseOperations.get_database_info()
@@ -165,7 +165,7 @@ class AsyncToolHandlers:
         """Get comprehensive database information."""
         try:
             logger.info("Getting database information")
-            
+
             db_info = await AsyncDatabaseOperations.get_database_info()
             return json.dumps(db_info, indent=2)
 
@@ -183,14 +183,14 @@ class AsyncToolHandlers:
         """Clear cache entries."""
         try:
             from mssql_mcp_server.utils.cache import cache_manager
-            
+
             logger.info(f"Clearing cache with pattern: '{pattern}'")
-            
+
             if pattern:
                 # Clear specific pattern
                 cleared_count = 0
-                for cache in [cache_manager.table_names_cache, cache_manager.table_data_cache, 
-                             cache_manager.table_schema_cache, cache_manager.query_cache]:
+                for cache in [cache_manager.table_names_cache, cache_manager.table_data_cache,
+                              cache_manager.table_schema_cache, cache_manager.query_cache]:
                     cleared_count += await cache.clear_pattern(pattern)
                 return f"Cleared {cleared_count} cache entries matching pattern: '{pattern}'"
             else:
@@ -211,9 +211,9 @@ class AsyncToolHandlers:
         """Invalidate cache for specific table or all tables."""
         try:
             logger.info(f"Invalidating cache for table: {table_name if table_name else 'all tables'}")
-            
+
             await AsyncDatabaseOperations.invalidate_caches(table_name)
-            
+
             if table_name:
                 return f"Invalidated cache for table: {table_name}"
             else:
@@ -225,19 +225,20 @@ class AsyncToolHandlers:
             return error_msg
 
     @staticmethod
-    async def execute_query_with_timeout(query: str, timeout_seconds: int = 30, allow_modifications: bool = False) -> str:
+    async def execute_query_with_timeout(query: str, timeout_seconds: int = 30,
+                                         allow_modifications: bool = False) -> str:
         """Execute a query with a specified timeout."""
         import asyncio
-        
+
         try:
             logger.info(f"Executing query with {timeout_seconds}s timeout: {query[:100]}...")
-            
+
             # Execute with timeout
             result = await asyncio.wait_for(
                 AsyncDatabaseOperations.execute_query(query, allow_modifications),
                 timeout=timeout_seconds
             )
-            
+
             if result.query_type in ["select", "show_tables", "cached_select"]:
                 if result.row_count == 0:
                     return "Query executed successfully but returned no results."
@@ -259,70 +260,3 @@ class AsyncToolHandlers:
             error_msg = f"Unexpected error: {str(e)}"
             logger.error(error_msg)
             return error_msg
-
-    @staticmethod
-    async def get_available_tools() -> List[Dict[str, Any]]:
-        """Get list of available tools with their descriptions."""
-        return [
-            {
-                "name": "execute_sql",
-                "description": "Execute an SQL query on the MSSQL server",
-                "parameters": {
-                    "query": "The SQL query to execute",
-                    "allow_modifications": "Whether to allow modification queries (default: false)"
-                }
-            },
-            {
-                "name": "get_table_schema",
-                "description": "Get schema information for a specific table",
-                "parameters": {
-                    "table_name": "Name of the table to describe"
-                }
-            },
-            {
-                "name": "list_tables",
-                "description": "Get a list of all tables in the database",
-                "parameters": {}
-            },
-            {
-                "name": "get_table_data",
-                "description": "Get data from a specific table",
-                "parameters": {
-                    "table_name": "Name of the table to read from",
-                    "limit": "Maximum number of rows to return (optional)"
-                }
-            },
-            {
-                "name": "test_connection",
-                "description": "Test the database connection and get connection info",
-                "parameters": {}
-            },
-            {
-                "name": "get_database_info",
-                "description": "Get comprehensive database information",
-                "parameters": {}
-            },
-            {
-                "name": "clear_cache",
-                "description": "Clear cache entries",
-                "parameters": {
-                    "pattern": "Pattern to match for selective clearing (optional)"
-                }
-            },
-            {
-                "name": "invalidate_table_cache",
-                "description": "Invalidate cache for specific table or all tables",
-                "parameters": {
-                    "table_name": "Name of the table to invalidate cache for (optional, clears all if not specified)"
-                }
-            },
-            {
-                "name": "execute_query_with_timeout",
-                "description": "Execute a query with a specified timeout",
-                "parameters": {
-                    "query": "The SQL query to execute",
-                    "timeout_seconds": "Timeout in seconds (default: 30)",
-                    "allow_modifications": "Whether to allow modification queries (default: false)"
-                }
-            }
-        ] 

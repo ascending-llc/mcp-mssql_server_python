@@ -15,18 +15,18 @@ logger = Logger.get_logger(__name__)
 @dataclass
 class QueryResult:
     """Result of a database query."""
-    
+
     columns: List[str]
     rows: List[List[Any]]
     row_count: int
     execution_time: float
     query_type: str
-    
+
     def to_csv(self) -> str:
         """Convert result to CSV format."""
         if not self.rows:
             return ""
-        
+
         lines = [",".join(self.columns)]
         for row in self.rows:
             formatted_row = []
@@ -37,10 +37,10 @@ class QueryResult:
                     cell_str = str(cell)
                     # Escape commas and quotes
                     if "," in cell_str or '"' in cell_str:
-                        cell_str = f'"{cell_str.replace(chr(34), chr(34)+chr(34))}"'
+                        cell_str = f'"{cell_str.replace(chr(34), chr(34) + chr(34))}"'
                     formatted_row.append(cell_str)
             lines.append(",".join(formatted_row))
-        
+
         return "\n".join(lines)
 
 
@@ -50,43 +50,108 @@ class AsyncDatabaseOperations:
     @staticmethod
     async def get_table_names() -> List[str]:
         """Get list of all table names in the database with caching."""
-        # Check cache first
-        cached_tables = await cache_manager.get_table_names()
-        if cached_tables is not None:
-            logger.debug(f"Using cached table names: {len(cached_tables)} tables")
-            return cached_tables
+        return await AsyncDatabaseOperations._get_object_names("table")
+
+    @staticmethod
+    async def get_view_names() -> List[str]:
+        """Get list of all view names in the database with caching."""
+        return await AsyncDatabaseOperations._get_object_names("view")
+
+    @staticmethod
+    async def _get_object_names(object_type: str) -> List[str]:
+        """Internal method to get table or view names with schema information and caching."""
+        if object_type == "table":
+            cached_objects = await cache_manager.get_table_names()
+        else:
+            cached_objects = await cache_manager.get_view_names()
+
+        if cached_objects is not None:
+            logger.debug(f"Using cached {object_type} names: {len(cached_objects)} {object_type}s")
+            return cached_objects
 
         try:
             pool = await get_pool()
             async with pool.get_connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute(
-                        "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
-                        "WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
-                    )
-                    tables = await cursor.fetchall()
-                    table_names = [table[0] for table in tables]
-                    
+                    if object_type == "table":
+                        query = """
+                                SELECT SCHEMA_NAME(schema_id) + '.' + name as full_name
+                                FROM sys.tables
+                                ORDER BY SCHEMA_NAME(schema_id), name \
+                                """
+                    else:  # view
+                        query = """
+                                SELECT SCHEMA_NAME(schema_id) + '.' + name as full_name
+                                FROM sys.views
+                                ORDER BY SCHEMA_NAME(schema_id), name \
+                                """
+
+                    await cursor.execute(query)
+                    objects = await cursor.fetchall()
+                    object_names = [obj[0] for obj in objects]
+
                     # Cache the result
-                    await cache_manager.set_table_names(table_names)
-                    logger.info(f"Fetched and cached {len(table_names)} table names")
-                    return table_names
+                    if object_type == "table":
+                        await cache_manager.set_table_names(object_names)
+                    else:
+                        await cache_manager.set_view_names(object_names)
+
+                    logger.info(f"Fetched and cached {len(object_names)} {object_type} names with schemas")
+                    return object_names
 
         except Exception as e:
-            logger.error(f"Failed to get table names: {e}")
-            raise DatabaseOperationError(f"Failed to retrieve table names: {e}")
+            logger.error(f"Failed to get {object_type} names: {e}")
+            raise DatabaseOperationError(f"Failed to retrieve {object_type} names: {e}")
+
+    @staticmethod
+    async def get_all_table_and_view_names() -> Dict[str, List[str]]:
+        """Get both tables and views with their schemas."""
+        try:
+            tables = await AsyncDatabaseOperations.get_table_names()
+            views = await AsyncDatabaseOperations.get_view_names()
+
+            return {
+                "tables": tables,
+                "views": views
+            }
+        except Exception as e:
+            logger.error(f"Failed to get tables and views: {e}")
+            raise DatabaseOperationError(f"Failed to retrieve tables and views: {e}")
 
     @staticmethod
     async def get_table_data(table_name: str, limit: Optional[int] = None) -> QueryResult:
         """Get data from a specific table with caching."""
-        if limit is None:
+        return await AsyncDatabaseOperations.get_object_data(table_name, "table", limit)
+
+    @staticmethod
+    async def get_view_data(view_name: str, limit: Optional[int] = None) -> QueryResult:
+        """Get data from a specific view with caching."""
+        return await AsyncDatabaseOperations.get_object_data(view_name, "view", limit)
+
+    @staticmethod
+    async def get_object_data(object_name: str, object_type: str = "table", limit: Optional[int] = None) -> QueryResult:
+        """Get data from a table or view with caching.
+        
+        Args:
+            object_name: Full object name in format 'schema.objectname' (e.g., 'dbo.Users')
+            object_type: Either 'table' or 'view'
+            limit: Maximum number of rows to return
+        """
+        if limit is None or limit > settings.server.max_rows_limit:
             limit = settings.server.max_rows_limit
 
+        # Validate that object_name contains schema
+        if '.' not in object_name:
+            raise DatabaseOperationError(
+                f"Object name must include schema: '{object_name}' should be 'schema.{object_name}'")
+
+        schema_name, table_name = object_name.split('.', 1)
+
         # Check cache first
-        cache_key = f"{table_name}_{limit}"
+        cache_key = f"{object_type}_{object_name}_{limit}" if object_type == "view" else f"{object_name}_{limit}"
         cached_data = await cache_manager.get_table_data(cache_key)
         if cached_data is not None:
-            logger.debug(f"Using cached data for table: {table_name}")
+            logger.debug(f"Using cached data for {object_type}: {object_name}")
             # Parse cached CSV back to QueryResult
             lines = cached_data.split('\n')
             if lines:
@@ -101,16 +166,24 @@ class AsyncDatabaseOperations:
                 )
 
         start_time = time.time()
-        
-        # Validate table name
-        valid_tables = await AsyncDatabaseOperations.get_table_names()
-        SQLValidator.validate_table_name(table_name, valid_tables)
+
+        # Validate object exists
+        if object_type == "table":
+            valid_objects = await AsyncDatabaseOperations.get_table_names()
+        else:  # view
+            valid_objects = await AsyncDatabaseOperations.get_view_names()
+
+        if object_name not in valid_objects:
+            raise DatabaseOperationError(
+                f"{object_type.title()} '{object_name}' not found. Available {object_type}s: {', '.join(valid_objects[:10])}")
 
         try:
             pool = await get_pool()
             async with pool.get_connection() as conn:
                 async with conn.cursor() as cursor:
-                    query = f"SELECT TOP {limit} * FROM [{table_name}]"
+                    # Use proper schema.object notation
+                    query = f"SELECT TOP {limit} * FROM [{schema_name}].[{table_name}]"
+                    logger.debug(f"Executing query: {query}")
                     await cursor.execute(query)
 
                     # Get column names
@@ -128,21 +201,21 @@ class AsyncDatabaseOperations:
                         execution_time=execution_time,
                         query_type="select"
                     )
-                    
+
                     # Cache the result
                     await cache_manager.set_table_data(cache_key, result.to_csv())
-                    
+
                     return result
 
         except Exception as e:
-            logger.error(f"Failed to get table data for {table_name}: {e}")
-            raise DatabaseOperationError(f"Failed to retrieve data from table '{table_name}': {e}")
+            logger.error(f"Failed to get {object_type} data for {object_name}: {e}")
+            raise DatabaseOperationError(f"Failed to retrieve data from {object_type} '{object_name}': {e}")
 
     @staticmethod
     async def execute_query(query: str, allow_modifications: bool = False) -> QueryResult:
         """Execute an SQL query and return results."""
         start_time = time.time()
-        
+
         # Validate query
         SQLValidator.validate_sql_query(query, allow_modifications)
 
@@ -174,7 +247,7 @@ class AsyncDatabaseOperations:
                         columns = [desc[0] for desc in cursor.description] if cursor.description else []
                         rows = await cursor.fetchall()
                         rows_list = [list(row) for row in rows]
-                        
+
                         return QueryResult(
                             columns=columns,
                             rows=rows_list,
@@ -187,12 +260,12 @@ class AsyncDatabaseOperations:
                         # Modification queries (INSERT, UPDATE, DELETE, etc.)
                         if allow_modifications:
                             await conn.commit()
-                            
+
                             # Invalidate related caches for DDL operations
                             if any(keyword in query_upper for keyword in ["CREATE", "DROP", "ALTER"]):
                                 await cache_manager.invalidate_table_related()
                                 logger.info("Invalidated table caches due to DDL operation")
-                            
+
                             row_count = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
                             return QueryResult(
                                 columns=["rows_affected"],
@@ -212,10 +285,33 @@ class AsyncDatabaseOperations:
     @staticmethod
     async def get_table_schema(table_name: str) -> List[Dict[str, Any]]:
         """Get schema information for a specific table with caching."""
+        return await AsyncDatabaseOperations.get_object_schema(table_name, "table")
+
+    @staticmethod
+    async def get_view_schema(view_name: str) -> List[Dict[str, Any]]:
+        """Get schema information for a specific view with caching."""
+        return await AsyncDatabaseOperations.get_object_schema(view_name, "view")
+
+    @staticmethod
+    async def get_object_schema(object_name: str, object_type: str = "table") -> List[Dict[str, Any]]:
+        """Get schema information for a table or view with caching.
+        
+        Args:
+            object_name: Full object name in format 'schema.objectname' (e.g., 'dbo.Users')
+            object_type: Either 'table' or 'view'
+        """
+        # Validate that object_name contains schema
+        if '.' not in object_name:
+            raise DatabaseOperationError(
+                f"Object name must include schema: '{object_name}' should be 'schema.{object_name}'")
+
+        schema_name, table_name = object_name.split('.', 1)
+
         # Check cache first
-        cached_schema = await cache_manager.get_table_schema(table_name)
+        cache_key = f"{object_type}_schema_{object_name}" if object_type == "view" else f"table_schema_{object_name}"
+        cached_schema = await cache_manager.get_table_schema(cache_key)
         if cached_schema is not None:
-            logger.debug(f"Using cached schema for table: {table_name}")
+            logger.debug(f"Using cached schema for {object_type}: {object_name}")
             # Parse cached CSV back to schema info
             lines = cached_schema.split('\n')
             if len(lines) > 1:
@@ -235,36 +331,44 @@ class AsyncDatabaseOperations:
                         })
                 return schema_info
 
-        # Validate table name
-        valid_tables = await AsyncDatabaseOperations.get_table_names()
-        SQLValidator.validate_table_name(table_name, valid_tables)
+        # Validate object exists
+        if object_type == "table":
+            valid_objects = await AsyncDatabaseOperations.get_table_names()
+        else:  # view
+            valid_objects = await AsyncDatabaseOperations.get_view_names()
+
+        if object_name not in valid_objects:
+            raise DatabaseOperationError(
+                f"{object_type.title()} '{object_name}' not found. Available {object_type}s: {', '.join(valid_objects[:10])}")
 
         try:
             pool = await get_pool()
             async with pool.get_connection() as conn:
                 async with conn.cursor() as cursor:
                     schema_query = """
-                    SELECT COLUMN_NAME, 
-                           DATA_TYPE, 
-                           IS_NULLABLE, 
-                           COLUMN_DEFAULT, 
-                           CHARACTER_MAXIMUM_LENGTH, 
-                           NUMERIC_PRECISION, 
-                           NUMERIC_SCALE
-                    FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_NAME = ?
-                    ORDER BY ORDINAL_POSITION
-                    """
+                                   SELECT COLUMN_NAME,
+                                          DATA_TYPE,
+                                          IS_NULLABLE,
+                                          COLUMN_DEFAULT,
+                                          CHARACTER_MAXIMUM_LENGTH,
+                                          NUMERIC_PRECISION,
+                                          NUMERIC_SCALE
+                                   FROM INFORMATION_SCHEMA.COLUMNS
+                                   WHERE TABLE_SCHEMA = ?
+                                     AND TABLE_NAME = ?
+                                   ORDER BY ORDINAL_POSITION \
+                                   """
 
-                    await cursor.execute(schema_query, (table_name,))
+                    await cursor.execute(schema_query, (schema_name, table_name))
                     columns = await cursor.fetchall()
 
                     if not columns:
-                        raise DatabaseOperationError(f"No schema information found for table '{table_name}'")
+                        raise DatabaseOperationError(
+                            f"No schema information found for {object_type} '{object_name}' in schema '{schema_name}'")
 
                     schema_info = []
                     csv_lines = ["Column Name,Data Type,Is Nullable,Default Value,Max Length,Precision,Scale"]
-                    
+
                     for col in columns:
                         schema_dict = {
                             "column_name": col[0],
@@ -276,7 +380,7 @@ class AsyncDatabaseOperations:
                             "numeric_scale": col[6]
                         }
                         schema_info.append(schema_dict)
-                        
+
                         # Create CSV line for caching
                         csv_line = [
                             str(col[0]),
@@ -288,15 +392,15 @@ class AsyncDatabaseOperations:
                             str(col[6]) if col[6] is not None else ""
                         ]
                         csv_lines.append(",".join(csv_line))
-                    
+
                     # Cache the result
-                    await cache_manager.set_table_schema(table_name, "\n".join(csv_lines))
-                    
+                    await cache_manager.set_table_schema(cache_key, "\n".join(csv_lines))
+
                     return schema_info
 
         except Exception as e:
-            logger.error(f"Failed to get schema for table {table_name}: {e}")
-            raise DatabaseOperationError(f"Failed to retrieve schema for table '{table_name}': {e}")
+            logger.error(f"Failed to get schema for {object_type} {object_name}: {e}")
+            raise DatabaseOperationError(f"Failed to retrieve schema for {object_type} '{object_name}': {e}")
 
     @staticmethod
     async def test_connection() -> bool:
@@ -318,21 +422,24 @@ class AsyncDatabaseOperations:
                     # Get database version
                     await cursor.execute("SELECT @@VERSION")
                     version_info = await cursor.fetchone()
-                    
+
                     # Get database name
                     await cursor.execute("SELECT DB_NAME()")
                     db_name = await cursor.fetchone()
-                    
-                    # Get table count
+
+                    # Get table and view counts
                     table_names = await AsyncDatabaseOperations.get_table_names()
-                    
+                    view_names = await AsyncDatabaseOperations.get_view_names()
+
                     return {
                         "database_name": db_name[0] if db_name else "Unknown",
                         "version": version_info[0] if version_info else "Unknown",
                         "table_count": len(table_names),
+                        "view_count": len(view_names),
+                        "total_objects": len(table_names) + len(view_names),
                         "connection_pool_info": pool.pool_info
                     }
-                    
+
         except Exception as e:
             logger.error(f"Failed to get database info: {e}")
             raise DatabaseOperationError(f"Failed to get database information: {e}")
@@ -341,4 +448,4 @@ class AsyncDatabaseOperations:
     async def invalidate_caches(table_name: Optional[str] = None) -> None:
         """Invalidate caches for database changes."""
         await cache_manager.invalidate_table_related(table_name)
-        logger.info(f"Caches invalidated for table: {table_name if table_name else 'all tables'}") 
+        logger.info(f"Caches invalidated for table: {table_name if table_name else 'all tables'}")

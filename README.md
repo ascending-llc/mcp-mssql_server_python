@@ -19,7 +19,7 @@ This ensures safer database exploration, strict permission enforcement, and logg
 ## Installation
 
 ```bash
-pip install mssql-mcp-server
+pip install -e .
 ```
 
 ## Configuration
@@ -27,14 +27,36 @@ pip install mssql-mcp-server
 Set the following environment variables to configure database access:
 
 ```bash
-MSSQL_DRIVER=mssql_driver
-MSSQL_HOST=localhost
-MSSQL_USER=your_username
-MSSQL_PASSWORD=your_password
-MSSQL_DATABASE=your_database
-#optional
-TrustServerCertificate=yes
-Trusted_Connection=no
+# Database connection settings
+MSSQL_DRIVER=ODBC Driver 18 for SQL Server
+MSSQL_HOST=127.0.0.1
+MSSQL_USER=
+MSSQL_PASSWORD=
+MSSQL_DATABASE=
+TRUST_SERVER_CERTIFICATE=yes
+TRUSTED_CONNECTION=no
+
+# MCP Server settings
+LOG_LEVEL: INFO
+MCP_TRANSPORT=http
+MCP_PORT=8000
+
+# Cache settings
+CACHE_ENABLED=true
+CACHE_TABLE_NAMES_TTL=600
+CACHE_TABLE_DATA_TTL=120
+CACHE_TABLE_SCHEMA_TTL=600
+
+# Connection pool settings
+DB_POOL_MIN_SIZE=2
+DB_POOL_MAX_SIZE=10
+ASYNC_DB_TIMEOUT=30
+
+# Server settings
+MAX_ROWS_LIMIT=10000
+ENABLE_ASYNC=true
+ENABLE_DYNAMIC_RESOURCES=true
+
 ```
 
 ## Usage

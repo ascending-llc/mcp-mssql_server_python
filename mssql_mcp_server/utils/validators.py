@@ -23,6 +23,17 @@ class SQLValidator:
         return True
 
     @classmethod
+    def validate_object_name(cls, object_name: str, valid_objects: List[str], object_type: str = "table") -> bool:
+        """Validate object name against list of valid objects (tables or views)."""
+        if not object_name:
+            raise ValidationError(f"{object_type.title()} name cannot be empty")
+
+        if object_name not in valid_objects:
+            raise ValidationError(f"{object_type.title()} '{object_name}' not found in database")
+
+        return True
+
+    @classmethod
     def validate_sql_query(cls, query: str, allow_modifications: bool = False) -> bool:
         """Validate SQL query for safety."""
         if not query or not query.strip():

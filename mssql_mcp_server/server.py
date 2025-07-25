@@ -28,6 +28,17 @@ async def get_database_tables() -> str:
         return f"Error: {str(e)}"
 
 
+@app.resource("mssql://database/views")
+async def get_database_views() -> str:
+    """List all views in the database."""
+    try:
+        logger.info("Listing database views")
+        return await AsyncResourceHandlers.list_database_views()
+    except Exception as e:
+        logger.error(f"Error listing views: {e}")
+        return f"Error: {str(e)}"
+
+
 @app.resource("mssql://database/info")
 async def get_database_info_resource() -> str:
     """Get general database information."""
@@ -39,64 +50,72 @@ async def get_database_info_resource() -> str:
         return f"Error: {str(e)}"
 
 
-async def register_table_resources():
-    """Dynamically register resources for each table."""
+async def register_table_and_view_resources():
+    """Dynamically register resources for each table and view."""
     try:
-        # Get table names
+        # Get table and view names
         from mssql_mcp_server.database.async_operations import AsyncDatabaseOperations
-        table_names = await AsyncDatabaseOperations.get_table_names()
+        table_and_view_data = await AsyncDatabaseOperations.get_all_table_and_view_names()
+        table_names = table_and_view_data["tables"]
+        view_names = table_and_view_data["views"]
 
-        logger.info(f"Registering resources for {len(table_names)} tables...")
+        logger.info(f"Registering resources for {len(table_names)} tables and {len(view_names)} views...")
 
-        def create_table_data_resource(table_name: str):
-            """Factory function to create table data resource."""
+        def create_object_data_resource(object_name: str, object_type: str):
+            """Factory function to create object data resource."""
+            schema, name = object_name.split('.', 1)
+            limit = 100  # Default limit for data retrieval
 
-            @app.resource(f"mssql://table/{table_name}/data",
-                          name=f"Table Data: {table_name}",
-                          description=f"Data from table {table_name} (top {settings.server.max_rows_limit} rows)")
-            async def get_table_data_func():
+            @app.resource(f"mssql://{object_type}/{schema}/{name}/data",
+                          name=f"{object_type.title()} Data: {object_name}",
+                          description=f"Data from {object_type} {object_name} (top {limit} rows)")
+            async def get_object_data_func():
                 try:
-                    logger.info(f"Reading table data: {table_name}")
-                    return await AsyncResourceHandlers.read_table_data(table_name)
+                    logger.info(f"Reading {object_type} data: {object_name}")
+                    return await AsyncResourceHandlers.read_object_data(object_name, object_type, limit)
                 except Exception as e:
-                    logger.error(f"Error reading table data {table_name}: {e}")
+                    logger.error(f"Error reading {object_type} data {object_name}: {e}")
                     return f"Error: {str(e)}"
 
-            return get_table_data_func
+            return get_object_data_func
 
-        def create_table_schema_resource(table_name: str):
-            """Factory function to create table schema resource."""
+        def create_object_schema_resource(object_name: str, object_type: str):
+            """Factory function to create object schema resource."""
+            schema, name = object_name.split('.', 1)
 
-            @app.resource(f"mssql://table/{table_name}/schema",
-                          name=f"Table Schema: {table_name}",
-                          description=f"Schema information for table {table_name}")
-            async def get_table_schema_func():
+            @app.resource(f"mssql://{object_type}/{schema}/{name}/schema",
+                          name=f"{object_type.title()} Schema: {object_name}",
+                          description=f"Schema information for {object_type} {object_name}")
+            async def get_object_schema_func():
                 try:
-                    logger.info(f"Reading table schema: {table_name}")
-                    return await AsyncResourceHandlers.read_table_schema(table_name)
+                    logger.info(f"Reading {object_type} schema: {object_name}")
+                    return await AsyncResourceHandlers.read_object_schema(object_name, object_type)
                 except Exception as e:
-                    logger.error(f"Error reading table schema {table_name}: {e}")
+                    logger.error(f"Error reading {object_type} schema {object_name}: {e}")
                     return f"Error: {str(e)}"
 
-            return get_table_schema_func
+            return get_object_schema_func
 
         # Register resources for each table
         for table_name in table_names:
-            # Create and register data resource
-            create_table_data_resource(table_name)
-            # Create and register schema resource  
-            create_table_schema_resource(table_name)
+            create_object_data_resource(table_name, "table")
+            create_object_schema_resource(table_name, "table")
 
-        total_resources = len(table_names) * 2 + 2  # 2 per table + 2 database-level
-        logger.info(f"Successfully registered {total_resources} resources")
+        # Register resources for each view
+        for view_name in view_names:
+            create_object_data_resource(view_name, "view")
+            create_object_schema_resource(view_name, "view")
+
+        total_resources = (len(table_names) + len(view_names)) * 2  # 2 resources per object (data + schema)
+        logger.info(
+            f"Successfully registered {total_resources} resources ({len(table_names)} tables, {len(view_names)} views)")
         return total_resources
 
     except Exception as e:
-        logger.error(f"Failed to register table resources: {e}")
+        logger.error(f"Failed to register table and view resources: {e}")
         return 0
 
 
-# Tools for database operations
 @app.tool()
 async def execute_sql(query: str, allow_modifications: bool = False) -> str:
     """
@@ -117,7 +136,7 @@ async def execute_sql(query: str, allow_modifications: bool = False) -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool()
+@app.tool(enabled=False)
 async def get_table_schema(table_name: str) -> str:
     """
     Get schema information for a specific table.
@@ -136,7 +155,7 @@ async def get_table_schema(table_name: str) -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool()
+@app.tool(enabled=False)
 async def list_tables() -> str:
     """
     Get a list of all tables in the database.
@@ -153,7 +172,7 @@ async def list_tables() -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool()
+@app.tool(enabled=False)
 async def get_table_data(table_name: str, limit: int = None) -> str:
     """
     Get data from a specific table.
@@ -173,7 +192,7 @@ async def get_table_data(table_name: str, limit: int = None) -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool()
+@app.tool(enabled=False)
 async def test_connection() -> str:
     """
     Test the database connection and get connection info.
@@ -189,7 +208,7 @@ async def test_connection() -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool()
+@app.tool(enabled=False)
 async def get_database_info() -> str:
     """
     Get comprehensive database information.
@@ -205,7 +224,7 @@ async def get_database_info() -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool()
+@app.tool(enabled=False)
 async def clear_cache(pattern: str = "") -> str:
     """
     Clear cache entries.
@@ -224,7 +243,7 @@ async def clear_cache(pattern: str = "") -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool()
+# @app.tool()
 async def invalidate_table_cache(table_name: str = None) -> str:
     """
     Invalidate cache for specific table or all tables.
@@ -243,7 +262,7 @@ async def invalidate_table_cache(table_name: str = None) -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool()
+@app.tool(enabled=False)
 async def execute_query_with_timeout(query: str, timeout_seconds: int = 30, allow_modifications: bool = False) -> str:
     """
     Execute a query with a specified timeout.
@@ -289,13 +308,15 @@ async def initialize_server() -> None:
             await cache_manager.start_cleanup_task()
             logger.info("Cache cleanup task started")
 
-        # Warm up caches by pre-loading table names
+        # Warm up caches by pre-loading table and view names
         from mssql_mcp_server.database.async_operations import AsyncDatabaseOperations
-        table_names = await AsyncDatabaseOperations.get_table_names()
-        logger.info(f"Pre-loaded {len(table_names)} table names into cache")
+        table_and_view_data = await AsyncDatabaseOperations.get_all_table_and_view_names()
+        table_names = table_and_view_data["tables"]
+        view_names = table_and_view_data["views"]
+        logger.info(f"Pre-loaded {len(table_names)} table names and {len(view_names)} view names into cache")
 
-        # Dynamically register resources for each table
-        total_resources = await register_table_resources()
+        # Dynamically register resources for each table and view
+        total_resources = await register_table_and_view_resources()
         logger.info(f"Server will expose {total_resources} dynamic resources")
         logger.info("Server initialization completed successfully")
 
@@ -332,7 +353,7 @@ async def main():
         transport = settings.server.transport
         port = settings.server.mcp_port
         logger.info(f"Starting server with transport: {transport}")
-        
+
         if transport in ["http", "tcp", "sse"]:
             logger.info(f"Using port: {port}")
             # Explicitly pass port to override FastMCP's default behavior

@@ -219,6 +219,7 @@ class CacheManager:
     
     def __init__(self):
         self.table_names_cache = SmartCache()
+        self.view_names_cache = SmartCache()
         self.table_data_cache = SmartCache()
         self.table_schema_cache = SmartCache()
         self.query_cache = SmartCache()
@@ -253,6 +254,7 @@ class CacheManager:
                 total_cleaned = 0
                 for cache_name, cache in [
                     ("table_names", self.table_names_cache),
+                    ("view_names", self.view_names_cache),
                     ("table_data", self.table_data_cache),
                     ("table_schema", self.table_schema_cache),
                     ("query", self.query_cache)
@@ -276,6 +278,14 @@ class CacheManager:
         """Set table names in cache."""
         await self.table_names_cache.set(key, value, settings.cache.table_names_ttl)
     
+    async def get_view_names(self, key: str = "view_names") -> Optional[List[str]]:
+        """Get view names from cache."""
+        return await self.view_names_cache.get(key)
+    
+    async def set_view_names(self, value: List[str], key: str = "view_names") -> None:
+        """Set view names in cache."""
+        await self.view_names_cache.set(key, value, settings.cache.table_names_ttl)
+    
     async def get_table_data(self, table_name: str) -> Optional[str]:
         """Get table data from cache."""
         return await self.table_data_cache.get(f"table_data_{table_name}")
@@ -295,21 +305,25 @@ class CacheManager:
     async def invalidate_table_related(self, table_name: Optional[str] = None) -> None:
         """Invalidate table-related cache entries."""
         if table_name:
-            # Invalidate specific table
+            # Invalidate specific table/view
             await self.table_data_cache.delete(f"table_data_{table_name}")
+            await self.table_data_cache.delete(f"view_{table_name}")
             await self.table_schema_cache.delete(f"table_schema_{table_name}")
-            logger.info(f"Invalidated cache for table: {table_name}")
+            await self.table_schema_cache.delete(f"view_schema_{table_name}")
+            logger.info(f"Invalidated cache for table/view: {table_name}")
         else:
-            # Invalidate all table-related caches
+            # Invalidate all table and view-related caches
             await self.table_names_cache.clear()
+            await self.view_names_cache.clear()
             await self.table_data_cache.clear()
             await self.table_schema_cache.clear()
-            logger.info("Invalidated all table-related caches")
+            logger.info("Invalidated all table and view-related caches")
     
     async def get_global_stats(self) -> Dict[str, Any]:
         """Get statistics for all caches."""
         return {
             "table_names_cache": await self.table_names_cache.get_stats(),
+            "view_names_cache": await self.view_names_cache.get_stats(),
             "table_data_cache": await self.table_data_cache.get_stats(),
             "table_schema_cache": await self.table_schema_cache.get_stats(),
             "query_cache": await self.query_cache.get_stats()
