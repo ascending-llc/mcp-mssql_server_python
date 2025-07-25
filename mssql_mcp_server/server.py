@@ -243,7 +243,7 @@ async def clear_cache(pattern: str = "") -> str:
         return f"Error: {str(e)}"
 
 
-# @app.tool()
+@app.tool(enabled=False)
 async def invalidate_table_cache(table_name: str = None) -> str:
     """
     Invalidate cache for specific table or all tables.
