@@ -1,4 +1,4 @@
-FROM python:3.12.3-slim
+FROM python:3.12-slim
 
 # Set basic environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -53,21 +53,18 @@ USER appuser
 
 # Environment variables for configuration
 ENV FASTMCP_TRANSPORT=http \
-    FASTMCP_PORT=8000 \
+    FASTMCP_HOST=0.0.0.0 \
+    FASTMCP_PORT=3333 \
     FASTMCP_LOG_LEVEL=INFO \
     CACHE_ENABLED=true \
     ENABLE_ASYNC=true \
     ENABLE_DYNAMIC_RESOURCES=true \
-    MAX_ROWS_LIMIT=10000 \
+    MAX_ROWS_LIMIT=500 \
     DB_POOL_MIN_SIZE=2 \
     DB_POOL_MAX_SIZE=10
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import asyncio; from mssql_mcp_server.database.async_connection import get_pool; asyncio.run(get_pool().test_connection())" || exit 1
-
 # Expose port
-EXPOSE 8000
+EXPOSE 3333
 
 # Start the server
 CMD ["python", "-m", "mssql_mcp_server.main"]

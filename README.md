@@ -37,25 +37,9 @@ TRUST_SERVER_CERTIFICATE=yes
 TRUSTED_CONNECTION=no
 
 # MCP Server settings
-LOG_LEVEL: INFO
-MCP_TRANSPORT=http
-MCP_PORT=8000
-
-# Cache settings
-CACHE_ENABLED=true
-CACHE_TABLE_NAMES_TTL=600
-CACHE_TABLE_DATA_TTL=120
-CACHE_TABLE_SCHEMA_TTL=600
-
-# Connection pool settings
-DB_POOL_MIN_SIZE=2
-DB_POOL_MAX_SIZE=10
-ASYNC_DB_TIMEOUT=30
-
-# Server settings
-MAX_ROWS_LIMIT=10000
-ENABLE_ASYNC=true
-ENABLE_DYNAMIC_RESOURCES=true
+FASTMCP_LOG_LEVEL: INFO
+FASTMCP_TRANSPORT=http
+FASTMCP_PORT=8000
 
 ```
 
@@ -114,6 +98,13 @@ pip install -r requirements-dev.txt
 
 # Run tests
 pytest
+```
+
+## Docker build
+``` bash
+docker build -t mssql-mcp . 
+docker run -e MSSQL_HOST=host.docker.internal -e MSSQL_USER={DATABASE_USERNAME} -e MSSQL_PASSWORD={DATABASE_PASSWORD} -e MSSQL_DATABASE={DATABASE_NAME} -e MAX_ROWS_LIMIT=250 -p 3333:3333 mssql-mcp
+
 ```
 
 ## Security Considerations

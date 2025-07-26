@@ -82,6 +82,7 @@ class ServerConfig:
     """Server configuration settings."""
 
     transport: str = "stdio"  # or "tcp"
+    host: str = "127.0.0.1"  # Server host binding
     log_level: str = "INFO"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
     max_rows_limit: int = 10000
     mcp_port: int = 8000
@@ -185,6 +186,7 @@ class Settings:
         """Load server configuration from environment variables."""
         return ServerConfig(
             transport=os.getenv("FASTMCP_TRANSPORT", "stdio"),
+            host=os.getenv("FASTMCP_HOST", "127.0.0.1"),
             log_level=os.getenv("FASTMCP_LOG_LEVEL", "INFO"),
             max_rows_limit=int(os.getenv("MAX_ROWS_LIMIT", "100")),
             enable_async=os.getenv("ENABLE_ASYNC", "true").lower() == "true",

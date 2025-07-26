@@ -351,13 +351,14 @@ async def main():
 
         # Get transport configuration
         transport = settings.server.transport
+        host = settings.server.host
         port = settings.server.mcp_port
         logger.info(f"Starting server with transport: {transport}")
 
         if transport in ["http", "tcp", "sse"]:
-            logger.info(f"Using port: {port}")
-            # Explicitly pass port to override FastMCP's default behavior
-            await app.run_async(transport=transport, port=port)
+            logger.info(f"Using host: {host}, port: {port}")
+            # Explicitly pass host and port to override FastMCP's default behavior
+            await app.run_async(transport=transport, host=host, port=port)
         else:
             logger.info(f"Using {transport} transport")
             await app.run_async(transport=transport)
