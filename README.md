@@ -19,7 +19,7 @@ This ensures safer database exploration, strict permission enforcement, and logg
 ## Installation
 
 ```bash
-pip install mssql-mcp-server
+pip install -e .
 ```
 
 ## Configuration
@@ -27,14 +27,20 @@ pip install mssql-mcp-server
 Set the following environment variables to configure database access:
 
 ```bash
-MSSQL_DRIVER=mssql_driver
-MSSQL_HOST=localhost
-MSSQL_USER=your_username
-MSSQL_PASSWORD=your_password
-MSSQL_DATABASE=your_database
-#optional
-TrustServerCertificate=yes
-Trusted_Connection=no
+# Database connection settings
+MSSQL_DRIVER=ODBC Driver 18 for SQL Server
+MSSQL_HOST=127.0.0.1
+MSSQL_USER=
+MSSQL_PASSWORD=
+MSSQL_DATABASE=
+TRUST_SERVER_CERTIFICATE=yes
+TRUSTED_CONNECTION=no
+
+# MCP Server settings
+FASTMCP_LOG_LEVEL: INFO
+FASTMCP_TRANSPORT=http
+FASTMCP_PORT=8000
+
 ```
 
 ## Usage
@@ -92,6 +98,13 @@ pip install -r requirements-dev.txt
 
 # Run tests
 pytest
+```
+
+## Docker build
+``` bash
+docker build -t mssql-mcp . 
+docker run -e MSSQL_HOST=host.docker.internal -e MSSQL_USER={DATABASE_USERNAME} -e MSSQL_PASSWORD={DATABASE_PASSWORD} -e MSSQL_DATABASE={DATABASE_NAME} -e MAX_ROWS_LIMIT=250 -p 3333:3333 mssql-mcp
+
 ```
 
 ## Security Considerations
