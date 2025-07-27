@@ -51,17 +51,30 @@ RUN chown -R appuser:appuser /app
 # Switch to non-root user
 USER appuser
 
-# Environment variables for configuration
+# FastMCP server configuration
 ENV FASTMCP_TRANSPORT=http \
     FASTMCP_HOST=0.0.0.0 \
     FASTMCP_PORT=3333 \
-    FASTMCP_LOG_LEVEL=INFO \
-    CACHE_ENABLED=true \
-    ENABLE_ASYNC=true \
+    FASTMCP_LOG_LEVEL=INFO
+
+# Cache configuration
+ENV CACHE_ENABLED=true \
+    CACHE_TABLE_NAMES_TTL=600 \
+    CACHE_TABLE_DATA_TTL=120 \
+    CACHE_TABLE_SCHEMA_TTL=600
+
+# Connection pool configuration
+ENV DB_POOL_MIN_SIZE=2 \
+    DB_POOL_MAX_SIZE=10 \
+    ASYNC_DB_TIMEOUT=120
+
+# Server feature configuration
+ENV ENABLE_ASYNC=true \
     ENABLE_DYNAMIC_RESOURCES=true \
-    MAX_ROWS_LIMIT=500 \
-    DB_POOL_MIN_SIZE=2 \
-    DB_POOL_MAX_SIZE=10
+    MAX_ROWS_LIMIT=500
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3333', timeout=5)" || exit 1
 
 # Expose port
 EXPOSE 3333

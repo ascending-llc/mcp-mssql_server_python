@@ -358,10 +358,18 @@ async def main():
         if transport in ["http", "tcp", "sse"]:
             logger.info(f"Using host: {host}, port: {port}")
             # Explicitly pass host and port to override FastMCP's default behavior
-            await app.run_async(transport=transport, host=host, port=port)
+            try:
+                await app.run_async(transport=transport, host=host, port=port)
+            except Exception as e:
+                logger.error(f"FastMCP server error: {e}", exc_info=True)
+                raise
         else:
             logger.info(f"Using {transport} transport")
-            await app.run_async(transport=transport)
+            try:
+                await app.run_async(transport=transport)
+            except Exception as e:
+                logger.error(f"FastMCP server error: {e}", exc_info=True)
+                raise
 
     except KeyboardInterrupt:
         logger.info("Server shutdown requested by user")
