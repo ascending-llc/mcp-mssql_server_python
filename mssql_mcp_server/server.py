@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
+import time
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from mssql_mcp_server.config.settings import settings
@@ -359,7 +360,13 @@ async def main():
             logger.info(f"Using host: {host}, port: {port}")
             # Explicitly pass host and port to override FastMCP's default behavior
             try:
-                await app.run_async(transport=transport, host=host, port=port)
+                await app.run_async(transport=transport, host=host, port=port, uvicorn_config={
+                        "workers": 4,  # Single worker for simplicity
+                        "timeout_keep_alive": 300,  # Keep connections alive for 60 seconds
+                        "timeout_notify": 300,
+                        "limit_concurrency": None,
+                        "limit_max_requests": None,
+                })
             except Exception as e:
                 logger.error(f"FastMCP server error: {e}", exc_info=True)
                 raise
