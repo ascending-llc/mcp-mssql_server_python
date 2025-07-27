@@ -456,30 +456,38 @@ class AsyncDatabaseOperations:
         if max_rows is None:
             max_rows = settings.server.max_rows_limit
 
+        # 智能选择策略：小数据集直接获取，大数据集分批获取
+        if max_rows <= 1000:
+            logger.info(f"Small dataset ({max_rows} rows), using direct fetch")
+            rows = await cursor.fetchmany(max_rows)
+            rows_list = [list(row) for row in rows]
+            logger.info(f"Direct fetch completed: {len(rows_list)} rows loaded")
+            return rows_list
+
+        # 大数据集使用分批加载
         rows_list = []
-        batch_size = 1000  # 每批1000行
+        batch_size = min(1000, max_rows // 5)  # 动态调整批次大小
         total_rows = 0
 
-        logger.info(f"Starting lazy fetch with batch size {batch_size}, max_rows: {max_rows}")
+        logger.info(f"Large dataset ({max_rows} rows), using lazy fetch with batch size {batch_size}")
 
         while total_rows < max_rows:
-            batch = await cursor.fetchmany(batch_size)
-            logger.info(f"Fetching rows: {total_rows}, batch size: {len(batch)}")
+            # 计算本次实际需要获取的行数
+            remaining = max_rows - total_rows
+            current_batch_size = min(batch_size, remaining)
+            
+            batch = await cursor.fetchmany(current_batch_size)
             if not batch:
                 break
-
-            # 只获取需要的行数
-            remaining = max_rows - total_rows
-            if len(batch) > remaining:
-                batch = batch[:remaining]
 
             batch_list = [list(row) for row in batch]
             rows_list.extend(batch_list)
             total_rows += len(batch)
 
-            # 进度日志
-            if total_rows % 1000 == 0:
-                logger.info(f"Loaded {total_rows} rows so far...")
+            # 动态进度日志
+            progress_interval = max(1000, max_rows // 10)
+            if total_rows % progress_interval == 0 or total_rows == max_rows:
+                logger.info(f"Loaded {total_rows}/{max_rows} rows ({total_rows/max_rows*100:.1f}%)")
 
         logger.info(f"Lazy fetch completed: {total_rows} rows loaded")
         return rows_list
