@@ -189,9 +189,8 @@ class AsyncDatabaseOperations:
                     # Get column names
                     columns = [desc[0] for desc in cursor.description]
 
-                    # Get data rows
-                    rows = await cursor.fetchall()
-                    rows_list = [list(row) for row in rows]
+                    # 懒加载：分批获取数据
+                    rows_list = await AsyncDatabaseOperations._fetch_rows_lazy(cursor, max_rows=limit)
 
                     execution_time = time.time() - start_time
                     result = QueryResult(
@@ -245,8 +244,9 @@ class AsyncDatabaseOperations:
                     elif query_upper.startswith("SELECT"):
                         # SELECT queries
                         columns = [desc[0] for desc in cursor.description] if cursor.description else []
-                        rows = await cursor.fetchall()
-                        rows_list = [list(row) for row in rows]
+
+                        # 懒加载SELECT结果
+                        rows_list = await AsyncDatabaseOperations._fetch_rows_lazy(cursor)
 
                         return QueryResult(
                             columns=columns,
@@ -449,3 +449,37 @@ class AsyncDatabaseOperations:
         """Invalidate caches for database changes."""
         await cache_manager.invalidate_table_related(table_name)
         logger.info(f"Caches invalidated for table: {table_name if table_name else 'all tables'}")
+
+    @staticmethod
+    async def _fetch_rows_lazy(cursor, max_rows: int = None) -> List[List[Any]]:
+        """Lazy loading helper function for fetching rows in batches."""
+        if max_rows is None:
+            max_rows = settings.server.max_rows_limit
+
+        rows_list = []
+        batch_size = 1000  # 每批1000行
+        total_rows = 0
+
+        logger.info(f"Starting lazy fetch with batch size {batch_size}, max_rows: {max_rows}")
+
+        while total_rows < max_rows:
+            batch = await cursor.fetchmany(batch_size)
+            logger.info(f"Fetching rows: {total_rows}, batch size: {len(batch)}")
+            if not batch:
+                break
+
+            # 只获取需要的行数
+            remaining = max_rows - total_rows
+            if len(batch) > remaining:
+                batch = batch[:remaining]
+
+            batch_list = [list(row) for row in batch]
+            rows_list.extend(batch_list)
+            total_rows += len(batch)
+
+            # 进度日志
+            if total_rows % 1000 == 0:
+                logger.info(f"Loaded {total_rows} rows so far...")
+
+        logger.info(f"Lazy fetch completed: {total_rows} rows loaded")
+        return rows_list

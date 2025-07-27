@@ -166,7 +166,7 @@ class Settings:
             database=os.getenv("MSSQL_DATABASE"),
             trusted_server_certificate=os.getenv("TRUST_SERVER_CERTIFICATE", "yes"),
             trusted_connection=os.getenv("TRUSTED_CONNECTION", "no"),
-            timeout=int(os.getenv("ASYNC_DB_TIMEOUT", "30")),
+            timeout=int(os.getenv("ASYNC_DB_TIMEOUT", "120")),
             pool_min_size=int(os.getenv("DB_POOL_MIN_SIZE", "2")),
             pool_max_size=int(os.getenv("DB_POOL_MAX_SIZE", "10"))
         )

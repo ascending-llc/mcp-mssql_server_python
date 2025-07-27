@@ -31,8 +31,6 @@ RUN apt-get update \
 # Verify ODBC driver installation
 RUN odbcinst -q -d -n "ODBC Driver 18 for SQL Server"
 
-# Create app user for security
-RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # Set working directory
 WORKDIR /app
@@ -45,11 +43,6 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy project files
 COPY . .
 
-# Change ownership to app user
-RUN chown -R appuser:appuser /app
-
-# Switch to non-root user
-USER appuser
 
 # FastMCP server configuration
 ENV FASTMCP_TRANSPORT=http \
@@ -73,8 +66,8 @@ ENV ENABLE_ASYNC=true \
     ENABLE_DYNAMIC_RESOURCES=true \
     MAX_ROWS_LIMIT=500
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3333', timeout=5)" || exit 1
+HEALTHCHECK --interval=60s --timeout=30s --start-period=120s --retries=5 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3333', timeout=20)" || exit 1
 
 # Expose port
 EXPOSE 3333

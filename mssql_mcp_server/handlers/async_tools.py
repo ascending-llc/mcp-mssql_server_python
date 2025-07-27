@@ -24,12 +24,6 @@ class AsyncToolHandlers:
                 # Format SELECT results as CSV
                 if result.row_count == 0:
                     return "Query executed successfully but returned no results."
-                if result.row_count > settings.server.max_rows_limit:
-                    logger.info(f"Query returned {result.row_count} rows,"
-                                f" which exceeds the maximum limit of {settings.server.max_rows_limit} rows.")
-                    rows = result.rows[:settings.server.max_rows_limit]
-                    result.rows = rows
-                    result.row_count = len(rows)
                 csv_data = result.to_csv()
                 logger.info(f"Query returned {result.row_count} rows in {result.execution_time:.3f}s")
                 return csv_data

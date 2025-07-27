@@ -361,11 +361,12 @@ async def main():
             # Explicitly pass host and port to override FastMCP's default behavior
             try:
                 await app.run_async(transport=transport, host=host, port=port, uvicorn_config={
-                        "workers": 4,  # Single worker for simplicity
-                        "timeout_keep_alive": 300,  # Keep connections alive for 60 seconds
-                        "timeout_notify": 300,
-                        "limit_concurrency": None,
-                        "limit_max_requests": None,
+                    "workers": 1,
+                    "timeout_keep_alive": 300,
+                    "timeout_notify": 300,
+                    "backlog": 2048,
+                    "limit_concurrency": 50,
+                    "limit_max_requests": None,
                 })
             except Exception as e:
                 logger.error(f"FastMCP server error: {e}", exc_info=True)
