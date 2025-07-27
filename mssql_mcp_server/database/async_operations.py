@@ -455,9 +455,10 @@ class AsyncDatabaseOperations:
         """Lazy loading helper function for fetching rows in batches."""
         if max_rows is None:
             max_rows = settings.server.max_rows_limit
+        batch_rows_size = settings.server.batch_rows_size
 
         # 智能选择策略：小数据集直接获取，大数据集分批获取
-        if max_rows <= 1000:
+        if max_rows <= batch_rows_size:
             logger.info(f"Small dataset ({max_rows} rows), using direct fetch")
             rows = await cursor.fetchmany(max_rows)
             rows_list = [list(row) for row in rows]
@@ -466,10 +467,11 @@ class AsyncDatabaseOperations:
 
         # 大数据集使用分批加载
         rows_list = []
-        batch_size = min(1000, max_rows // 5)  # 动态调整批次大小
+        # 使用配置的batch_rows_size，但不超过max_rows，确保合理的批次数量
+        batch_size = min(batch_rows_size, max_rows)
         total_rows = 0
 
-        logger.info(f"Large dataset ({max_rows} rows), using lazy fetch with batch size {batch_size}")
+        logger.info(f"Large dataset ({max_rows} rows), using lazy fetch with batch size {batch_size} (configured: {batch_rows_size})")
 
         while total_rows < max_rows:
             # 计算本次实际需要获取的行数
@@ -485,7 +487,7 @@ class AsyncDatabaseOperations:
             total_rows += len(batch)
 
             # 动态进度日志
-            progress_interval = max(1000, max_rows // 10)
+            progress_interval = max(batch_rows_size, max_rows // 10)
             if total_rows % progress_interval == 0 or total_rows == max_rows:
                 logger.info(f"Loaded {total_rows}/{max_rows} rows ({total_rows/max_rows*100:.1f}%)")
 
