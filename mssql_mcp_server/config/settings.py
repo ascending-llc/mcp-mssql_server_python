@@ -84,7 +84,8 @@ class ServerConfig:
     transport: str = "stdio"  # or "tcp"
     host: str = "127.0.0.1"  # Server host binding
     log_level: str = "INFO"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
-    max_rows_limit: int = 10000
+    max_rows_limit: int = 100
+    batch_rows_size: int = 100
     mcp_port: int = 8000
     enable_async: bool = True
     enable_dynamic_resources: bool = True
@@ -164,9 +165,9 @@ class Settings:
             user=os.getenv("MSSQL_USER"),
             password=os.getenv("MSSQL_PASSWORD"),
             database=os.getenv("MSSQL_DATABASE"),
-            trusted_server_certificate=os.getenv("TrustServerCertificate", "yes"),
-            trusted_connection=os.getenv("Trusted_Connection", "no"),
-            timeout=int(os.getenv("ASYNC_DB_TIMEOUT", "30")),
+            trusted_server_certificate=os.getenv("TRUST_SERVER_CERTIFICATE", "yes"),
+            trusted_connection=os.getenv("TRUSTED_CONNECTION", "no"),
+            timeout=int(os.getenv("ASYNC_DB_TIMEOUT", "120")),
             pool_min_size=int(os.getenv("DB_POOL_MIN_SIZE", "2")),
             pool_max_size=int(os.getenv("DB_POOL_MAX_SIZE", "10"))
         )
@@ -188,7 +189,8 @@ class Settings:
             transport=os.getenv("FASTMCP_TRANSPORT", "stdio"),
             host=os.getenv("FASTMCP_HOST", "127.0.0.1"),
             log_level=os.getenv("FASTMCP_LOG_LEVEL", "INFO"),
-            max_rows_limit=int(os.getenv("MAX_ROWS_LIMIT", "100")),
+            max_rows_limit=int(os.getenv("MAX_ROWS_LIMIT", "1000")),
+            batch_rows_size=int(os.getenv("BATCH_ROWS_SIZE", "100")),
             enable_async=os.getenv("ENABLE_ASYNC", "true").lower() == "true",
             enable_dynamic_resources=os.getenv("ENABLE_DYNAMIC_RESOURCES", "true").lower() == "true",
             mcp_port=int(os.getenv("FASTMCP_PORT", "8000"))

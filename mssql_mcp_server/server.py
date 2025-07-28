@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
+import time
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from mssql_mcp_server.config.settings import settings
@@ -277,7 +278,7 @@ async def execute_query_with_timeout(query: str, timeout_seconds: int = 30, allo
     """
     try:
         logger.info(f"Executing query with timeout: {query[:100]}...")
-        return await AsyncToolHandlers.execute_query_with_timeout(query, timeout_seconds, allow_modifications)
+        return await AsyncToolHandlers.execute_sql(query, allow_modifications, timeout_seconds)
     except Exception as e:
         logger.error(f"Error executing query with timeout: {e}")
         return f"Error: {str(e)}"
@@ -358,10 +359,25 @@ async def main():
         if transport in ["http", "tcp", "sse"]:
             logger.info(f"Using host: {host}, port: {port}")
             # Explicitly pass host and port to override FastMCP's default behavior
-            await app.run_async(transport=transport, host=host, port=port)
+            try:
+                await app.run_async(transport=transport, host=host, port=port, uvicorn_config={
+                    "workers": 1,
+                    "timeout_keep_alive": 300,
+                    "timeout_notify": 300,
+                    "backlog": 2048,
+                    "limit_concurrency": 50,
+                    "limit_max_requests": None,
+                })
+            except Exception as e:
+                logger.error(f"FastMCP server error: {e}", exc_info=True)
+                raise
         else:
             logger.info(f"Using {transport} transport")
-            await app.run_async(transport=transport)
+            try:
+                await app.run_async(transport=transport)
+            except Exception as e:
+                logger.error(f"FastMCP server error: {e}", exc_info=True)
+                raise
 
     except KeyboardInterrupt:
         logger.info("Server shutdown requested by user")

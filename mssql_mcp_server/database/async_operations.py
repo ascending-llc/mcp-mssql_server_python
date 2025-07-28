@@ -189,9 +189,8 @@ class AsyncDatabaseOperations:
                     # Get column names
                     columns = [desc[0] for desc in cursor.description]
 
-                    # Get data rows
-                    rows = await cursor.fetchall()
-                    rows_list = [list(row) for row in rows]
+                    # 懒加载：分批获取数据
+                    rows_list = await AsyncDatabaseOperations._fetch_rows_lazy(cursor, max_rows=limit)
 
                     execution_time = time.time() - start_time
                     result = QueryResult(
@@ -245,8 +244,9 @@ class AsyncDatabaseOperations:
                     elif query_upper.startswith("SELECT"):
                         # SELECT queries
                         columns = [desc[0] for desc in cursor.description] if cursor.description else []
-                        rows = await cursor.fetchall()
-                        rows_list = [list(row) for row in rows]
+
+                        # 懒加载SELECT结果
+                        rows_list = await AsyncDatabaseOperations._fetch_rows_lazy(cursor)
 
                         return QueryResult(
                             columns=columns,
@@ -449,3 +449,47 @@ class AsyncDatabaseOperations:
         """Invalidate caches for database changes."""
         await cache_manager.invalidate_table_related(table_name)
         logger.info(f"Caches invalidated for table: {table_name if table_name else 'all tables'}")
+
+    @staticmethod
+    async def _fetch_rows_lazy(cursor, max_rows: int = None) -> List[List[Any]]:
+        """Lazy loading helper function for fetching rows in batches."""
+        if max_rows is None:
+            max_rows = settings.server.max_rows_limit
+        batch_rows_size = settings.server.batch_rows_size
+
+        # 智能选择策略：小数据集直接获取，大数据集分批获取
+        if max_rows <= batch_rows_size:
+            logger.info(f"Small dataset ({max_rows} rows), using direct fetch")
+            rows = await cursor.fetchmany(max_rows)
+            rows_list = [list(row) for row in rows]
+            logger.info(f"Direct fetch completed: {len(rows_list)} rows loaded")
+            return rows_list
+
+        # 大数据集使用分批加载
+        rows_list = []
+        # 使用配置的batch_rows_size，但不超过max_rows，确保合理的批次数量
+        batch_size = min(batch_rows_size, max_rows)
+        total_rows = 0
+
+        logger.info(f"Large dataset ({max_rows} rows), using lazy fetch with batch size {batch_size} (configured: {batch_rows_size})")
+
+        while total_rows < max_rows:
+            # 计算本次实际需要获取的行数
+            remaining = max_rows - total_rows
+            current_batch_size = min(batch_size, remaining)
+            
+            batch = await cursor.fetchmany(current_batch_size)
+            if not batch:
+                break
+
+            batch_list = [list(row) for row in batch]
+            rows_list.extend(batch_list)
+            total_rows += len(batch)
+
+            # 动态进度日志
+            progress_interval = max(batch_rows_size, max_rows // 10)
+            if total_rows % progress_interval == 0 or total_rows == max_rows:
+                logger.info(f"Loaded {total_rows}/{max_rows} rows ({total_rows/max_rows*100:.1f}%)")
+
+        logger.info(f"Lazy fetch completed: {total_rows} rows loaded")
+        return rows_list

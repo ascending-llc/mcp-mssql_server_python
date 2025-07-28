@@ -1,6 +1,6 @@
-from typing import List, Dict, Any
 import json
-
+import asyncio
+from typing import List
 from mssql_mcp_server.database.async_operations import AsyncDatabaseOperations
 from mssql_mcp_server.config.settings import settings
 from mssql_mcp_server.utils.logger import Logger
@@ -13,23 +13,27 @@ class AsyncToolHandlers:
     """Async MCP tool handlers."""
 
     @staticmethod
-    async def execute_sql(query: str, allow_modifications: bool = False) -> str:
-        """Execute an SQL query on the MSSQL server."""
+    async def execute_sql(query: str, allow_modifications: bool = False, timeout_seconds: int = None) -> str:
+        """Execute an SQL query on the MSSQL server with optional timeout."""
         try:
-            logger.info(f"Executing SQL query: {query[:100]}...")
+            if timeout_seconds:
+                logger.info(f"Executing SQL query with {timeout_seconds}s timeout: {query[:100]}...")
+            else:
+                logger.info(f"Executing SQL query: {query[:100]}...")
 
-            result = await AsyncDatabaseOperations.execute_query(query, allow_modifications)
+            # Execute with or without timeout
+            if timeout_seconds:
+                result = await asyncio.wait_for(
+                    AsyncDatabaseOperations.execute_query(query, allow_modifications),
+                    timeout=timeout_seconds
+                )
+            else:
+                result = await AsyncDatabaseOperations.execute_query(query, allow_modifications)
 
             if result.query_type in ["select", "show_tables", "cached_select"]:
                 # Format SELECT results as CSV
                 if result.row_count == 0:
                     return "Query executed successfully but returned no results."
-                if result.row_count > settings.server.max_rows_limit:
-                    logger.info(f"Query returned {result.row_count} rows,"
-                                f" which exceeds the maximum limit of {settings.server.max_rows_limit} rows.")
-                    rows = result.rows[:settings.server.max_rows_limit]
-                    result.rows = rows
-                    result.row_count = len(rows)
                 csv_data = result.to_csv()
                 logger.info(f"Query returned {result.row_count} rows in {result.execution_time:.3f}s")
                 return csv_data
@@ -43,6 +47,10 @@ class AsyncToolHandlers:
             else:
                 return "Query executed successfully."
 
+        except asyncio.TimeoutError:
+            error_msg = f"Query execution timed out after {timeout_seconds} seconds"
+            logger.error(error_msg)
+            return error_msg
         except DatabaseOperationError as e:
             error_msg = f"Database error executing query: {str(e)}"
             logger.error(error_msg)
@@ -226,42 +234,5 @@ class AsyncToolHandlers:
 
         except Exception as e:
             error_msg = f"Error invalidating cache: {str(e)}"
-            logger.error(error_msg)
-            return error_msg
-
-    @staticmethod
-    async def execute_query_with_timeout(query: str, timeout_seconds: int = 30,
-                                         allow_modifications: bool = False) -> str:
-        """Execute a query with a specified timeout."""
-        import asyncio
-
-        try:
-            logger.info(f"Executing query with {timeout_seconds}s timeout: {query[:100]}...")
-
-            # Execute with timeout
-            result = await asyncio.wait_for(
-                AsyncDatabaseOperations.execute_query(query, allow_modifications),
-                timeout=timeout_seconds
-            )
-
-            if result.query_type in ["select", "show_tables", "cached_select"]:
-                if result.row_count == 0:
-                    return "Query executed successfully but returned no results."
-                return result.to_csv()
-            elif result.query_type == "modification":
-                return f"Query executed successfully. Rows affected: {result.row_count} (Execution time: {result.execution_time:.3f}s)"
-            else:
-                return "Query executed successfully."
-
-        except asyncio.TimeoutError:
-            error_msg = f"Query execution timed out after {timeout_seconds} seconds"
-            logger.error(error_msg)
-            return error_msg
-        except DatabaseOperationError as e:
-            error_msg = f"Database error: {str(e)}"
-            logger.error(error_msg)
-            return error_msg
-        except Exception as e:
-            error_msg = f"Unexpected error: {str(e)}"
             logger.error(error_msg)
             return error_msg
