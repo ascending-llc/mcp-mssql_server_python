@@ -228,11 +228,11 @@ class AsyncDatabaseOperations:
 
                     # Handle different query types
                     query_upper = query.strip().upper()
-                    execution_time = time.time() - start_time
 
                     if query_upper == "SHOW TABLES":
                         # Special handling for SHOW TABLES
                         table_names = await AsyncDatabaseOperations.get_table_names()
+                        execution_time = time.time() - start_time
                         return QueryResult(
                             columns=[f"Tables_in_{settings.async_database.database}"],
                             rows=[[table] for table in table_names],
@@ -247,6 +247,9 @@ class AsyncDatabaseOperations:
 
                         # 懒加载SELECT结果
                         rows_list = await AsyncDatabaseOperations._fetch_rows_lazy(cursor)
+                        
+                        # Calculate execution time AFTER fetching all rows
+                        execution_time = time.time() - start_time
 
                         return QueryResult(
                             columns=columns,
@@ -267,6 +270,7 @@ class AsyncDatabaseOperations:
                                 logger.info("Invalidated table caches due to DDL operation")
 
                             row_count = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
+                            execution_time = time.time() - start_time
                             return QueryResult(
                                 columns=["rows_affected"],
                                 rows=[[row_count]],
@@ -278,7 +282,6 @@ class AsyncDatabaseOperations:
                             raise DatabaseOperationError("Modification queries are not allowed")
 
         except Exception as e:
-            execution_time = time.time() - start_time
             logger.error(f"Database error executing query: {e}")
             raise DatabaseOperationError(f"Query execution failed: {e}")
 
