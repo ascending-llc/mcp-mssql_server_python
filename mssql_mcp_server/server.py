@@ -278,7 +278,7 @@ async def execute_query_with_timeout(query: str, timeout_seconds: int = 30, allo
     """
     try:
         logger.info(f"Executing query with timeout: {query[:100]}...")
-        return await AsyncToolHandlers.execute_query_with_timeout(query, timeout_seconds, allow_modifications)
+        return await AsyncToolHandlers.execute_sql(query, allow_modifications, timeout_seconds)
     except Exception as e:
         logger.error(f"Error executing query with timeout: {e}")
         return f"Error: {str(e)}"
