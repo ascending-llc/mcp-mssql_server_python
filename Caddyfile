@@ -1,0 +1,8 @@
+{
+  debug
+}
+
+localhost {
+    reverse_proxy localhost:3333
+    tls internal
+}
