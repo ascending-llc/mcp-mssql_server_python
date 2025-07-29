@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import asyncio
-import time
+from typing import Optional
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+from fastmcp import Context
 from mssql_mcp_server.config.settings import settings
 from mssql_mcp_server.database.async_connection import get_pool, close_pool
 from mssql_mcp_server.handlers.async_resources import AsyncResourceHandlers
@@ -118,14 +119,14 @@ async def register_table_and_view_resources():
 
 
 @app.tool()
-async def execute_sql(query: str, allow_modifications: bool = False) -> str:
+async def execute_sql(query: str, allow_modifications: bool = False, ctx: Optional[Context] = None) -> str:
     """
     Execute an SQL query on the MSSQL server.
     
     Args:
         query: The SQL query to execute
         allow_modifications: Whether to allow modification queries (default: false)
-    
+        ctx: Optional context to use for executing queries (default: None)
     Returns:
         Query results or execution status
     """
@@ -260,27 +261,6 @@ async def invalidate_table_cache(table_name: str = None) -> str:
         return await AsyncToolHandlers.invalidate_table_cache(table_name)
     except Exception as e:
         logger.error(f"Error invalidating cache: {e}")
-        return f"Error: {str(e)}"
-
-
-@app.tool(enabled=False)
-async def execute_query_with_timeout(query: str, timeout_seconds: int = 30, allow_modifications: bool = False) -> str:
-    """
-    Execute a query with a specified timeout.
-    
-    Args:
-        query: The SQL query to execute
-        timeout_seconds: Timeout in seconds (default: 30)
-        allow_modifications: Whether to allow modification queries (default: false)
-    
-    Returns:
-        Query results or execution status
-    """
-    try:
-        logger.info(f"Executing query with timeout: {query[:100]}...")
-        return await AsyncToolHandlers.execute_sql(query, allow_modifications, timeout_seconds)
-    except Exception as e:
-        logger.error(f"Error executing query with timeout: {e}")
         return f"Error: {str(e)}"
 
 
