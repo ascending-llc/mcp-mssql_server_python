@@ -107,6 +107,17 @@ docker run -e MSSQL_HOST=host.docker.internal -e MSSQL_USER={DATABASE_USERNAME} 
 
 ```
 
+## run on https port at local
+``` bash
+caddy run
+```
+
+## trouble shoot your MPC resource
+``` bash
+npx @modelcontextprotocol/inspector http://localhost:3333/mcp
+```
+
+
 ## Security Considerations
 
 - **Use a dedicated MSSQL user** with minimal privileges.
