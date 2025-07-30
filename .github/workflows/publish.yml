@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Image version (e.g., 0.1.1)'
+        description: 'Optional for tagging a immutable version (e.g., 0.1.1)'
         type: string
         required: false
       region:
@@ -15,7 +15,7 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write  # Added for Git tagging
 
 jobs:
   package-and-push-chart:
@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for tagging
 
       - name: Set IAM role to assume
         id: set-role
@@ -58,6 +60,27 @@ jobs:
           echo "$TAGS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Create Git tag for release version
+        if: ${{ inputs.release_version != '' }}
+        id: create-tag
+        run: |
+          TAG_NAME="${{ inputs.release_version }}"
+          echo "Creating Git tag: $TAG_NAME"
+          
+          # Check if tag already exists
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "⚠️  Tag $TAG_NAME already exists, skipping tag creation"
+            echo "tag_created=false" >> $GITHUB_OUTPUT
+          else
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git tag -a "$TAG_NAME" -m "Release version ${{ inputs.release_version }}"
+            git push origin "$TAG_NAME"
+            echo "✅ Created and pushed tag: $TAG_NAME"
+            echo "tag_created=true" >> $GITHUB_OUTPUT
+          fi
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
       - name: Build,tag and push image
         uses: docker/build-push-action@v6
         with:
@@ -67,3 +90,22 @@ jobs:
           push: true
           tags: ${{ steps.set-tags.outputs.tags }}
           provenance: false
+
+      - name: Summary
+        run: |
+          echo "## 🚀 Build and Push Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Docker tags pushed:**" >> $GITHUB_STEP_SUMMARY
+          echo "  - \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY  
+          echo "  - \`latest\`" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -n "${{ inputs.release_version }}" ]; then
+            echo "  - \`${{ inputs.release_version }}\`" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ steps.create-tag.outputs.tag_created }}" = "true" ]; then
+              echo "- **Git tag created:** \`${{ steps.create-tag.outputs.tag_name }}\` ✅" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- **Git tag:** \`${{ steps.create-tag.outputs.tag_name }}\` (already existed) ⚠️" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "- **Git tag:** None (no release_version provided)" >> $GITHUB_STEP_SUMMARY
+          fi
