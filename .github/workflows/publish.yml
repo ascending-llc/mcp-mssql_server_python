@@ -6,7 +6,7 @@ on:
       release_version:
         description: 'Image version (e.g., 0.1.1)'
         type: string
-        required: true
+        required: false
       region:
         description: 'AWS Region'
         type: string
@@ -43,6 +43,21 @@ jobs:
         with:
           registries: "897729109735"
 
+      - name: Set image tags
+        id: set-tags
+        run: |
+          TAGS="${{ steps.login-ecr.outputs.registry }}/jarvis/mssql_mcp_server:${{ github.sha }}
+          ${{ steps.login-ecr.outputs.registry }}/jarvis/mssql_mcp_server:latest"
+          
+          if [ -n "${{ inputs.release_version }}" ]; then
+            TAGS="$TAGS
+          ${{ steps.login-ecr.outputs.registry }}/jarvis/mssql_mcp_server:${{ inputs.release_version }}"
+          fi
+          
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Build,tag and push image
         uses: docker/build-push-action@v6
         with:
@@ -50,7 +65,5 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/jarvis/mssql_mcp_server:${{ github.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/jarvis/mssql_mcp_server:latest
+          tags: ${{ steps.set-tags.outputs.tags }}
           provenance: false
