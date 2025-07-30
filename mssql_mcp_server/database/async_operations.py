@@ -2,6 +2,8 @@ import time
 from typing import List, Tuple, Any, Dict, Optional
 from dataclasses import dataclass
 
+from fastmcp.server.dependencies import get_context
+
 from mssql_mcp_server.database.async_connection import get_pool
 from mssql_mcp_server.config.settings import settings
 from mssql_mcp_server.utils.logger import Logger
@@ -164,7 +166,7 @@ class AsyncDatabaseOperations:
                     execution_time=0.0,  # Cached result
                     query_type="cached_select"
                 )
-
+        ctx = get_context()
         start_time = time.time()
 
         # Validate object exists
@@ -203,7 +205,7 @@ class AsyncDatabaseOperations:
 
                     # Cache the result
                     await cache_manager.set_table_data(cache_key, result.to_csv())
-
+                    await ctx.report_progress(progress=result.row_count, total=result.row_count)
                     return result
 
         except Exception as e:
@@ -228,11 +230,11 @@ class AsyncDatabaseOperations:
 
                     # Handle different query types
                     query_upper = query.strip().upper()
-                    execution_time = time.time() - start_time
 
                     if query_upper == "SHOW TABLES":
                         # Special handling for SHOW TABLES
                         table_names = await AsyncDatabaseOperations.get_table_names()
+                        execution_time = time.time() - start_time
                         return QueryResult(
                             columns=[f"Tables_in_{settings.async_database.database}"],
                             rows=[[table] for table in table_names],
@@ -247,6 +249,9 @@ class AsyncDatabaseOperations:
 
                         # 懒加载SELECT结果
                         rows_list = await AsyncDatabaseOperations._fetch_rows_lazy(cursor)
+
+                        # Calculate execution time AFTER fetching all rows
+                        execution_time = time.time() - start_time
 
                         return QueryResult(
                             columns=columns,
@@ -267,6 +272,7 @@ class AsyncDatabaseOperations:
                                 logger.info("Invalidated table caches due to DDL operation")
 
                             row_count = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
+                            execution_time = time.time() - start_time
                             return QueryResult(
                                 columns=["rows_affected"],
                                 rows=[[row_count]],
@@ -278,7 +284,6 @@ class AsyncDatabaseOperations:
                             raise DatabaseOperationError("Modification queries are not allowed")
 
         except Exception as e:
-            execution_time = time.time() - start_time
             logger.error(f"Database error executing query: {e}")
             raise DatabaseOperationError(f"Query execution failed: {e}")
 
@@ -471,25 +476,25 @@ class AsyncDatabaseOperations:
         batch_size = min(batch_rows_size, max_rows)
         total_rows = 0
 
-        logger.info(f"Large dataset ({max_rows} rows), using lazy fetch with batch size {batch_size} (configured: {batch_rows_size})")
+        logger.info(f"Large dataset ({max_rows} rows), "
+                    f"using lazy fetch with batch size {batch_size}"
+                    f" (configured: {batch_rows_size})")
+        ctx = get_context()
 
         while total_rows < max_rows:
             # 计算本次实际需要获取的行数
             remaining = max_rows - total_rows
             current_batch_size = min(batch_size, remaining)
-            
+
             batch = await cursor.fetchmany(current_batch_size)
             if not batch:
                 break
-
             batch_list = [list(row) for row in batch]
             rows_list.extend(batch_list)
             total_rows += len(batch)
-
-            # 动态进度日志
-            progress_interval = max(batch_rows_size, max_rows // 10)
-            if total_rows % progress_interval == 0 or total_rows == max_rows:
-                logger.info(f"Loaded {total_rows}/{max_rows} rows ({total_rows/max_rows*100:.1f}%)")
-
+            await ctx.report_progress(progress=total_rows, total=max_rows,
+                                      message=f"Loaded {total_rows / max_rows * 100:.1f}%")
+            logger.info(f" Loaded {total_rows / max_rows * 100:.1f}% of total rows ({total_rows} loaded)")
+            time.sleep(5)
         logger.info(f"Lazy fetch completed: {total_rows} rows loaded")
         return rows_list
