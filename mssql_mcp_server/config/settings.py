@@ -46,9 +46,11 @@ class AsyncDatabaseConfig:
     database: str
     trusted_server_certificate: str
     trusted_connection: str
-    timeout: int = 30
     pool_min_size: int = 2
     pool_max_size: int = 10
+    pool_timeout: int = 30
+    query_timeout: int = 300
+    progress_interval: int = 5
 
     @property
     def connection_string(self) -> str:
@@ -61,7 +63,7 @@ class AsyncDatabaseConfig:
             f"Database={self.database};"
             f"TrustServerCertificate={self.trusted_server_certificate};"
             f"Trusted_Connection={self.trusted_connection};"
-            f"Timeout={self.timeout};"
+            f"Timeout={self.pool_timeout};"
         )
 
 
@@ -101,13 +103,6 @@ class Settings:
         self._server_config: Optional[ServerConfig] = None
 
     @property
-    def database(self) -> DatabaseConfig:
-        """Get database configuration."""
-        if self._database_config is None:
-            self._database_config = self._load_database_config()
-        return self._database_config
-
-    @property
     def async_database(self) -> AsyncDatabaseConfig:
         """Get async database configuration."""
         if self._async_database_config is None:
@@ -128,27 +123,6 @@ class Settings:
             self._server_config = self._load_server_config()
         return self._server_config
 
-    def _load_database_config(self) -> DatabaseConfig:
-        """Load database configuration from environment variables."""
-        required_vars = ["MSSQL_USER", "MSSQL_PASSWORD", "MSSQL_DATABASE"]
-        missing_vars = [var for var in required_vars if not os.getenv(var)]
-
-        if missing_vars:
-            raise ConfigurationError(
-                f"Missing required environment variables: {', '.join(missing_vars)}"
-            )
-
-        return DatabaseConfig(
-            driver=os.getenv("MSSQL_DRIVER", "SQL Server"),
-            host=os.getenv("MSSQL_HOST", "localhost"),
-            user=os.getenv("MSSQL_USER"),
-            password=os.getenv("MSSQL_PASSWORD"),
-            database=os.getenv("MSSQL_DATABASE"),
-            trusted_server_certificate=os.getenv("TRUST_SERVER_CERTIFICATE", "yes"),
-            trusted_connection=os.getenv("TRUSTED_CONNECTION", "no"),
-            timeout=int(os.getenv("DB_TIMEOUT", "60"))
-        )
-
     def _load_async_database_config(self) -> AsyncDatabaseConfig:
         """Load async database configuration from environment variables."""
         required_vars = ["MSSQL_USER", "MSSQL_PASSWORD", "MSSQL_DATABASE"]
@@ -167,9 +141,11 @@ class Settings:
             database=os.getenv("MSSQL_DATABASE"),
             trusted_server_certificate=os.getenv("TRUST_SERVER_CERTIFICATE", "yes"),
             trusted_connection=os.getenv("TRUSTED_CONNECTION", "no"),
-            timeout=int(os.getenv("ASYNC_DB_TIMEOUT", "120")),
             pool_min_size=int(os.getenv("DB_POOL_MIN_SIZE", "2")),
-            pool_max_size=int(os.getenv("DB_POOL_MAX_SIZE", "10"))
+            pool_max_size=int(os.getenv("DB_POOL_MAX_SIZE", "10")),
+            pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "120")),
+            query_timeout=int(os.getenv("DB_QUERY_TIMEOUT", "120")),
+            progress_interval=int(os.getenv("DB_PROGRESS_INTERVAL", "5")),
         )
 
     def _load_cache_config(self) -> CacheConfig:
