@@ -1,9 +1,8 @@
 import time
 from typing import List, Tuple, Any, Dict, Optional
 from dataclasses import dataclass
-
+import asyncio
 from fastmcp.server.dependencies import get_context
-
 from mssql_mcp_server.database.async_connection import get_pool
 from mssql_mcp_server.config.settings import settings
 from mssql_mcp_server.utils.logger import Logger
@@ -214,78 +213,154 @@ class AsyncDatabaseOperations:
 
     @staticmethod
     async def execute_query(query: str, allow_modifications: bool = False) -> QueryResult:
-        """Execute an SQL query and return results."""
+        """Execute an SQL query and return results with unified progress reporting and exception handling."""
         start_time = time.time()
+        timeout = settings.async_database.query_timeout
 
         # Validate query
         SQLValidator.validate_sql_query(query, allow_modifications)
 
+        # 创建查询任务
+        query_task = asyncio.create_task(
+            AsyncDatabaseOperations._execute_query_with_connection(
+                query, allow_modifications, start_time
+            )
+        )
+        # 创建进度报告任务，查询任务以便在超时时取消
+        progress_task = asyncio.create_task(
+            AsyncDatabaseOperations._report_time_progress(start_time, query_task)
+        )
         try:
-            pool = await get_pool()
-            async with pool.get_connection() as conn:
-                async with conn.cursor() as cursor:
-                    logger.info(f"Executing query: {query[:100]}...")
-
-                    await cursor.execute(query)
-
-                    # Handle different query types
-                    query_upper = query.strip().upper()
-
-                    if query_upper == "SHOW TABLES":
-                        # Special handling for SHOW TABLES
-                        table_names = await AsyncDatabaseOperations.get_table_names()
-                        execution_time = time.time() - start_time
-                        return QueryResult(
-                            columns=[f"Tables_in_{settings.async_database.database}"],
-                            rows=[[table] for table in table_names],
-                            row_count=len(table_names),
-                            execution_time=execution_time,
-                            query_type="show_tables"
-                        )
-
-                    elif query_upper.startswith("SELECT"):
-                        # SELECT queries
-                        columns = [desc[0] for desc in cursor.description] if cursor.description else []
-
-                        # 懒加载SELECT结果
-                        rows_list = await AsyncDatabaseOperations._fetch_rows_lazy(cursor)
-
-                        # Calculate execution time AFTER fetching all rows
-                        execution_time = time.time() - start_time
-
-                        return QueryResult(
-                            columns=columns,
-                            rows=rows_list,
-                            row_count=len(rows_list),
-                            execution_time=execution_time,
-                            query_type="select"
-                        )
-
-                    else:
-                        # Modification queries (INSERT, UPDATE, DELETE, etc.)
-                        if allow_modifications:
-                            await conn.commit()
-
-                            # Invalidate related caches for DDL operations
-                            if any(keyword in query_upper for keyword in ["CREATE", "DROP", "ALTER"]):
-                                await cache_manager.invalidate_table_related()
-                                logger.info("Invalidated table caches due to DDL operation")
-
-                            row_count = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
-                            execution_time = time.time() - start_time
-                            return QueryResult(
-                                columns=["rows_affected"],
-                                rows=[[row_count]],
-                                row_count=row_count,
-                                execution_time=execution_time,
-                                query_type="modification"
-                            )
-                        else:
-                            raise DatabaseOperationError("Modification queries are not allowed")
-
+            # 等待查询完成或超时
+            result = await query_task
+            # 查询成功完成，检查进度任务是否已经报告了完成
+            if not progress_task.done():
+                await AsyncDatabaseOperations._report_query_completion(start_time)
+            else:
+                logger.debug("Progress task already completed, skipping duplicate completion report")
+            return result
+        except asyncio.CancelledError:
+            # 查询任务被取消（通常是超时导致）
+            execution_time = time.time() - start_time
+            await AsyncDatabaseOperations._report_query_timeout(execution_time)
+            error_msg = f"Query execution cancelled after {execution_time:.2f}s (limit: {timeout}s)"
+            logger.error(error_msg)
+            raise DatabaseOperationError(error_msg)
+        except asyncio.TimeoutError:
+            # 超时异常（备用机制）
+            execution_time = time.time() - start_time
+            await AsyncDatabaseOperations._report_query_timeout(execution_time)
+            error_msg = f"Query execution timed out after {execution_time:.2f}s (limit: {timeout}s)"
+            logger.error(error_msg)
+            raise DatabaseOperationError(error_msg)
+        except DatabaseOperationError as e:
+            # 数据库异常，报告错误进度
+            execution_time = time.time() - start_time
+            await AsyncDatabaseOperations._report_query_error(execution_time, str(e))
+            logger.error(f"Database error executing query after {execution_time:.2f}s: {e}")
+            raise e
         except Exception as e:
-            logger.error(f"Database error executing query: {e}")
-            raise DatabaseOperationError(f"Query execution failed: {e}")
+            execution_time = time.time() - start_time
+            await AsyncDatabaseOperations._report_query_error(execution_time, f"Unexpected error: {str(e)}")
+            logger.error(f"Unexpected error executing query after {execution_time:.2f}s: {e}")
+            raise DatabaseOperationError(f"Query execution failed after {execution_time:.2f}s: {e}")
+        finally:
+            if not progress_task.done():
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except asyncio.CancelledError:
+                    logger.debug("Progress reporting task cancelled")
+
+            # 如果查询任务还没完成，也要取消； 需要扩大超时时间来解决
+            if not query_task.done():
+                query_task.cancel()
+                try:
+                    await query_task
+                except asyncio.CancelledError:
+                    logger.debug("Query task cancelled in cleanup")
+
+    @staticmethod
+    async def _execute_query_with_connection(query: str, allow_modifications: bool, start_time: float) -> QueryResult:
+        """Execute query with database connection and handle different query types."""
+        pool = await get_pool()
+        async with pool.get_connection() as conn:
+            async with conn.cursor() as cursor:
+                logger.info(f"Executing query: {query[:100]}...")
+
+                # 为数据库操作设置强制超时
+                timeout = settings.async_database.query_timeout
+                try:
+                    await asyncio.wait_for(cursor.execute(query), timeout=timeout)
+                except asyncio.TimeoutError:
+                    logger.error(f"Database execute operation timed out after {timeout}s")
+                    # 抛出取消异常，连接会由 async with 自动关闭
+                    raise asyncio.CancelledError("Database operation timed out")
+
+                query_upper = query.strip().upper()
+
+                if query_upper == "SHOW TABLES":
+                    return await AsyncDatabaseOperations._handle_show_tables_query(start_time)
+                elif query_upper.startswith("SELECT") or query_upper.startswith("WAITFOR"):
+                    return await AsyncDatabaseOperations._handle_select_query(cursor, start_time)
+                else:
+                    return await AsyncDatabaseOperations._handle_modification_query(
+                        conn, cursor, query_upper, allow_modifications, start_time
+                    )
+
+    @staticmethod
+    async def _handle_show_tables_query(start_time: float) -> QueryResult:
+        """Handle SHOW TABLES query."""
+        table_names = await AsyncDatabaseOperations.get_table_names()
+        execution_time = time.time() - start_time
+        return QueryResult(
+            columns=[f"Tables_in_{settings.async_database.database}"],
+            rows=[[table] for table in table_names],
+            row_count=len(table_names),
+            execution_time=execution_time,
+            query_type="show_tables"
+        )
+
+    @staticmethod
+    async def _handle_select_query(cursor, start_time: float) -> QueryResult:
+        """Handle SELECT query."""
+        columns = [desc[0] for desc in cursor.description] if cursor.description else []
+
+        # 获取行数据
+        rows_list = await AsyncDatabaseOperations._fetch_rows_lazy(cursor)
+
+        execution_time = time.time() - start_time
+        return QueryResult(
+            columns=columns,
+            rows=rows_list,
+            row_count=len(rows_list),
+            execution_time=execution_time,
+            query_type="select"
+        )
+
+    @staticmethod
+    async def _handle_modification_query(conn, cursor, query_upper: str, allow_modifications: bool,
+                                         start_time: float) -> QueryResult:
+        """Handle modification queries (INSERT, UPDATE, DELETE, etc.)."""
+        if not allow_modifications:
+            raise DatabaseOperationError("Modification queries are not allowed")
+
+        await conn.commit()
+
+        # Invalidate related caches for DDL operations
+        if any(keyword in query_upper for keyword in ["CREATE", "DROP", "ALTER"]):
+            await cache_manager.invalidate_table_related()
+            logger.info("Invalidated table caches due to DDL operation")
+
+        row_count = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
+        execution_time = time.time() - start_time
+        return QueryResult(
+            columns=["rows_affected"],
+            rows=[[row_count]],
+            row_count=row_count,
+            execution_time=execution_time,
+            query_type="modification"
+        )
 
     @staticmethod
     async def get_table_schema(table_name: str) -> List[Dict[str, Any]]:
@@ -472,29 +547,133 @@ class AsyncDatabaseOperations:
 
         # 大数据集使用分批加载
         rows_list = []
-        # 使用配置的batch_rows_size，但不超过max_rows，确保合理的批次数量
         batch_size = min(batch_rows_size, max_rows)
         total_rows = 0
 
-        logger.info(f"Large dataset ({max_rows} rows), "
-                    f"using lazy fetch with batch size {batch_size}"
-                    f" (configured: {batch_rows_size})")
-        ctx = get_context()
+        logger.info(f"Large dataset ({max_rows} rows), using lazy fetch with batch size {batch_size}")
 
         while total_rows < max_rows:
-            # 计算本次实际需要获取的行数
             remaining = max_rows - total_rows
             current_batch_size = min(batch_size, remaining)
 
             batch = await cursor.fetchmany(current_batch_size)
             if not batch:
                 break
+
             batch_list = [list(row) for row in batch]
             rows_list.extend(batch_list)
             total_rows += len(batch)
-            await ctx.report_progress(progress=total_rows, total=max_rows,
-                                      message=f"Loaded {total_rows / max_rows * 100:.1f}%")
-            logger.info(f" Loaded {total_rows / max_rows * 100:.1f}% of total rows ({total_rows} loaded)")
-            time.sleep(5)
+
+            logger.debug(f"Loaded {total_rows}/{max_rows} rows ({total_rows / max_rows * 100:.1f}%)")
+
         logger.info(f"Lazy fetch completed: {total_rows} rows loaded")
         return rows_list
+
+    @staticmethod
+    async def _report_time_progress(start_time: float, query_task: asyncio.Task, interval: int = 10) -> None:
+        """基于时间的进度报告，超时时主动取消查询任务"""
+        ctx = get_context()
+        timeout = settings.async_database.query_timeout
+        progress_interval = settings.async_database.progress_interval
+        interval = min(interval, progress_interval)
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                # 检查查询任务是否已完成
+                if query_task.done():
+                    elapsed_time = time.time() - start_time
+                    await ctx.report_progress(
+                        progress=timeout,
+                        total=timeout,
+                        message=f"Query completed in {elapsed_time:.1f}s"
+                    )
+                    logger.info(f"Query completed detected by progress reporter in {elapsed_time:.1f}s")
+                    break
+                elapsed_time = time.time() - start_time
+                remaining_time = timeout - elapsed_time
+                progress_percentage = (elapsed_time / timeout) * 100
+
+                # 如果超过超时时间，主动取消查询任务并退出
+                if elapsed_time >= timeout:
+                    await ctx.report_progress(
+                        progress=timeout,
+                        total=timeout,
+                        message=f"Query timeout reached ({timeout}s), cancelling query task"
+                    )
+                    logger.warning(f"Query timeout reached: {elapsed_time:.1f}s >= {timeout}s, cancelling query task")
+
+                    # 主动取消查询任务并等待取消完成
+                    if not query_task.done():
+                        query_task.cancel()
+                        logger.info("Query task cancelled due to timeout")
+
+                        # 等待任务真正被取消（设置短超时避免无限等待）
+                        try:
+                            await asyncio.wait_for(query_task, timeout=2.0)
+                        except asyncio.CancelledError:
+                            logger.info("Query task successfully cancelled")
+                        except asyncio.TimeoutError:
+                            logger.warning("Query task cancellation timed out, may still be running")
+                        except Exception as e:
+                            logger.warning(f"Exception during query task cancellation: {e}")
+                    break
+
+                # 正常进度报告
+                await ctx.report_progress(
+                    progress=elapsed_time,
+                    total=timeout,
+                    message=f"Query running: {elapsed_time:.1f}s elapsed, {remaining_time:.1f}s remaining ({progress_percentage:.1f}%)"
+                )
+                logger.info(f"Query progress: {elapsed_time:.1f}s/{timeout}s ({progress_percentage:.1f}%)")
+
+        except asyncio.CancelledError:
+            logger.debug("Time-based progress reporting cancelled")
+            raise
+
+    @staticmethod
+    async def _report_query_completion(start_time: float) -> None:
+        """查询完成时报告100%进度"""
+        try:
+            ctx = get_context()
+            timeout = settings.async_database.query_timeout
+            elapsed_time = time.time() - start_time
+
+            await ctx.report_progress(
+                progress=timeout,
+                total=timeout,
+                message=f"Query completed successfully in {elapsed_time:.1f}s"
+            )
+            logger.info(f"Query completed in {elapsed_time:.1f}s (100% progress reported)")
+
+        except Exception as e:
+            logger.error(f"Failed to report query completion progress: {e}")
+
+    @staticmethod
+    async def _report_query_timeout(execution_time: float) -> None:
+        """查询超时时报告进度"""
+        timeout = settings.async_database.query_timeout
+        try:
+            ctx = get_context()
+            await ctx.report_progress(
+                progress=execution_time,  # 使用实际执行时间作为progress
+                total=timeout,
+                message=f"Query timed out after {execution_time:.1f}s (limit: {timeout}s)"
+            )
+            logger.warning(f"Query timeout progress reported: {execution_time:.1f}s/{timeout}s")
+        except Exception as e:
+            logger.error(f"Failed to report query timeout progress: {e}")
+
+    @staticmethod
+    async def _report_query_error(execution_time: float, error_message: str) -> None:
+        """查询错误时报告进度"""
+        timeout = settings.async_database.query_timeout
+        try:
+            ctx = get_context()
+            await ctx.report_progress(
+                progress=execution_time,  # 使用实际执行时间
+                total=timeout,           # 使用总超时时间作为total
+                message=f"Query failed after {execution_time:.1f}s: {error_message}"
+            )
+            logger.error(f"Query error progress reported: {error_message}")
+        except Exception as e:
+            logger.error(f"Failed to report query error progress: {e}")

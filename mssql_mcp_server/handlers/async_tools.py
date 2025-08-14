@@ -1,7 +1,5 @@
 import json
-import asyncio
 from typing import List
-from fastmcp.server.dependencies import get_context
 from mssql_mcp_server.database.async_operations import AsyncDatabaseOperations
 from mssql_mcp_server.config.settings import settings
 from mssql_mcp_server.utils.logger import Logger
@@ -15,40 +13,26 @@ class AsyncToolHandlers:
 
     @staticmethod
     async def execute_sql(query: str, allow_modifications: bool = False) -> str:
-        """Execute an SQL query on the MSSQL server with optional timeout."""
+        """Execute an SQL query on the MSSQL server with timeout and progress reporting."""
+        logger.info(f"Executing SQL query: {query[:100]}...")
+        
         try:
-            logger.info(f"Executing SQL query: {query[:100]}...")
-            ctx = get_context()
             result = await AsyncDatabaseOperations.execute_query(query, allow_modifications)
-
             if result.query_type in ["select", "show_tables", "cached_select"]:
                 if result.row_count == 0:
                     return "Query executed successfully but returned no results."
-                csv_data = result.to_csv()
                 logger.info(f"Query returned {result.row_count} rows in {result.execution_time:.3f}s")
-                await ctx.report_progress(progress=result.row_count, total=result.row_count,
-                                          message="Query executed successfully, length: {result.row_count}")
-                return csv_data
+                return result.to_csv()
 
             elif result.query_type == "modification":
                 message = f"Query executed successfully. Rows affected: {result.row_count}"
                 if result.execution_time > 0:
                     message += f" (Execution time: {result.execution_time:.3f}s)"
                 return message
-
             else:
                 return "Query executed successfully."
-
-        except asyncio.TimeoutError:
-            error_msg = f"Query execution timed out after {timeout_seconds} seconds"
-            logger.error(error_msg)
-            return error_msg
-        except DatabaseOperationError as e:
-            error_msg = f"Database error executing query: {str(e)}"
-            logger.error(error_msg)
-            return error_msg
         except Exception as e:
-            error_msg = f"Unexpected error executing query: {str(e)}"
+            error_msg = f"Unexpected error: {str(e)}"
             logger.error(error_msg)
             return error_msg
 

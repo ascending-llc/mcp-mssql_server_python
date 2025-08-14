@@ -1,8 +1,6 @@
-import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional, AsyncGenerator
 import aioodbc
-
 from mssql_mcp_server.config.settings import settings
 from mssql_mcp_server.utils.logger import Logger
 from mssql_mcp_server.utils.exceptions import DatabaseConnectionError
@@ -31,7 +29,7 @@ class AsyncDatabasePool:
                 dsn=config.connection_string,
                 minsize=config.pool_min_size,
                 maxsize=config.pool_max_size,
-                timeout=config.timeout,
+                timeout=config.pool_timeout,
             )
             
             self._initialized = True
