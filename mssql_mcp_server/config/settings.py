@@ -89,7 +89,6 @@ class ServerConfig:
     max_rows_limit: int = 100
     batch_rows_size: int = 100
     mcp_port: int = 8000
-    fastapi_port: int = 8001  # FastAPI app port
     enable_async: bool = True
     enable_dynamic_resources: bool = True
 
@@ -171,7 +170,6 @@ class Settings:
             enable_async=os.getenv("ENABLE_ASYNC", "true").lower() == "true",
             enable_dynamic_resources=os.getenv("ENABLE_DYNAMIC_RESOURCES", "true").lower() == "true",
             mcp_port=int(os.getenv("FASTMCP_PORT", "8000")),
-            fastapi_port=int(os.getenv("FASTAPI_PORT", "8001"))
         )
 
 
