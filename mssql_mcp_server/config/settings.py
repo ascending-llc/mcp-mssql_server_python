@@ -169,7 +169,7 @@ class Settings:
             batch_rows_size=int(os.getenv("BATCH_ROWS_SIZE", "100")),
             enable_async=os.getenv("ENABLE_ASYNC", "true").lower() == "true",
             enable_dynamic_resources=os.getenv("ENABLE_DYNAMIC_RESOURCES", "true").lower() == "true",
-            mcp_port=int(os.getenv("FASTMCP_PORT", "8000"))
+            mcp_port=int(os.getenv("FASTMCP_PORT", "8000")),
         )
 
 

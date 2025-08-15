@@ -4,6 +4,8 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp import Context
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 from mssql_mcp_server.config.settings import settings
 from mssql_mcp_server.database.async_connection import get_pool, close_pool
 from mssql_mcp_server.handlers.async_resources import AsyncResourceHandlers
@@ -116,6 +118,44 @@ async def register_table_and_view_resources():
     except Exception as e:
         logger.error(f"Failed to register table and view resources: {e}")
         return 0
+
+
+@app.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> JSONResponse:
+    """
+    Health check endpoint for the FastAPI application.
+
+    Args:
+        timeout: 睡眠时间（秒），每5秒打印一次日志。如果为空则直接返回结果
+
+    Returns:
+        Health status response
+    """
+
+    timeout = request.query_params.get("timeout")
+    start_time = asyncio.get_event_loop().time()
+    if timeout is None:
+        logger.info("健康检查请求 - 立即返回")
+        return JSONResponse({"status": "ok"})
+    logger.info(f"健康检查开始，超时时间: {timeout} 秒")
+    timeout = int(timeout) if timeout.isdigit() else 0
+    if timeout > 0:
+        elapsed = 0
+        while elapsed < timeout:
+            remaining = timeout - elapsed
+            wait_time = min(5, remaining)
+            await asyncio.sleep(wait_time)
+            elapsed = int(asyncio.get_event_loop().time() - start_time)
+            if elapsed < timeout:
+                logger.info(f"健康检查运行中... 已用时: {elapsed} 秒，剩余: {timeout - elapsed} 秒")
+
+    total_time = int(asyncio.get_event_loop().time() - start_time)
+    logger.info(f"健康检查完成，总耗时: {total_time} 秒")
+    return JSONResponse({
+        "status": "ok",
+        "timeout": timeout,
+        "actual_duration": total_time
+    })
 
 
 @app.tool()
