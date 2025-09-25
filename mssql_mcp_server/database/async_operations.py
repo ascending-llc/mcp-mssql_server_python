@@ -7,7 +7,6 @@ from mssql_mcp_server.database.async_connection import get_pool
 from mssql_mcp_server.config.settings import settings
 from mssql_mcp_server.utils.logger import Logger
 from mssql_mcp_server.utils.exceptions import DatabaseOperationError
-from mssql_mcp_server.utils.validators import SQLValidator
 from mssql_mcp_server.utils.cache import cache_manager
 
 logger = Logger.get_logger(__name__)
@@ -218,7 +217,7 @@ class AsyncDatabaseOperations:
         timeout = settings.async_database.query_timeout
 
         # Validate query
-        SQLValidator.validate_sql_query(query, allow_modifications)
+        #SQLValidator.validate_sql_query(query, allow_modifications)
 
         # 创建查询任务
         query_task = asyncio.create_task(
