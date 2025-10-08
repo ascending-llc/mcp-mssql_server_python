@@ -10,6 +10,26 @@ class AsyncResourceHandlers:
     """Async MCP resource handlers with dynamic resource generation."""
 
     @staticmethod
+    async def get_ai_views_column_descriptions():
+        sql = """
+              SELECT v.name   AS ViewName,
+                     c.name   AS ColumnName,
+                     ep.value AS Description
+              FROM sys.views v
+                       INNER JOIN sys.schemas s ON v.schema_id = s.schema_id
+                       LEFT JOIN sys.columns c ON c.object_id = v.object_id
+                       LEFT JOIN sys.extended_properties ep
+                                 ON ep.major_id = v.object_id
+                                     AND ep.name = c.name
+                                     AND ep.minor_id = 0
+                                     AND ep.class = 1
+              WHERE s.name = 'AI'
+                AND v.name = 'v_SL_Reviews'
+              ORDER BY c.column_id \
+              """
+        return await AsyncDatabaseOperations.execute_query(sql)
+
+    @staticmethod
     async def read_object_data(object_name: str, object_type: str = "table", limit: int = 100) -> str:
         """Read data from a specific table or view."""
         try:
