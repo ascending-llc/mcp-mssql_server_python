@@ -45,27 +45,27 @@ def dynamically_register_resources():
                 return f"Error: {str(e)}"
 
 
-# # Static database-level resources
-# @app.resource("mssql://database/tables")
-# async def get_database_tables() -> str:
-#     """List all tables in the database."""
-#     try:
-#         logger.info("Listing database tables")
-#         return await AsyncResourceHandlers.list_database_tables()
-#     except Exception as e:
-#         logger.error(f"Error listing tables: {e}")
-#         return f"Error: {str(e)}"
+# Static database-level resources
+@app.resource("mssql://database/tables")
+async def get_database_tables() -> str:
+    """List all tables in the database."""
+    try:
+        logger.info("Listing database tables")
+        return await AsyncResourceHandlers.list_database_tables()
+    except Exception as e:
+        logger.error(f"Error listing tables: {e}")
+        return f"Error: {str(e)}"
 
 
-# @app.resource("mssql://database/views")
-# async def get_database_views() -> str:
-#     """List all views in the database."""
-#     try:
-#         logger.info("Listing database views")
-#         return await AsyncResourceHandlers.list_database_views()
-#     except Exception as e:
-#         logger.error(f"Error listing views: {e}")
-#         return f"Error: {str(e)}"
+@app.resource("mssql://database/views")
+async def get_database_views() -> str:
+    """List all views in the database."""
+    try:
+        logger.info("Listing database views")
+        return await AsyncResourceHandlers.list_database_views()
+    except Exception as e:
+        logger.error(f"Error listing views: {e}")
+        return f"Error: {str(e)}"
 
 
 @app.resource("mssql://database/info")
@@ -79,70 +79,70 @@ async def get_database_info_resource() -> str:
         return f"Error: {str(e)}"
 
 
-async def register_table_and_view_resources():
-    """Dynamically register resources for each table and view."""
-    try:
-        # Get table and view names
-        from mssql_mcp_server.database.async_operations import AsyncDatabaseOperations
-        table_and_view_data = await AsyncDatabaseOperations.get_all_table_and_view_names()
-        table_names = table_and_view_data["tables"]
-        view_names = table_and_view_data["views"]
+# async def register_table_and_view_resources():
+#     """Dynamically register resources for each table and view."""
+#     try:
+#         # Get table and view names
+#         from mssql_mcp_server.database.async_operations import AsyncDatabaseOperations
+#         table_and_view_data = await AsyncDatabaseOperations.get_all_table_and_view_names()
+#         table_names = table_and_view_data["tables"]
+#         view_names = table_and_view_data["views"]
 
-        logger.info(f"Registering resources for {len(table_names)} tables and {len(view_names)} views...")
+#         logger.info(f"Registering resources for {len(table_names)} tables and {len(view_names)} views...")
 
-        def create_object_data_resource(object_name: str, object_type: str):
-            """Factory function to create object data resource."""
-            schema, name = object_name.split('.', 1)
-            limit = 100  # Default limit for data retrieval
+#         def create_object_data_resource(object_name: str, object_type: str):
+#             """Factory function to create object data resource."""
+#             schema, name = object_name.split('.', 1)
+#             limit = 100  # Default limit for data retrieval
 
-            @app.resource(f"mssql://{object_type}/{schema}/{name}/data",
-                          name=f"{object_type.title()} Data: {object_name}",
-                          description=f"Data from {object_type} {object_name} (top {limit} rows)")
-            async def get_object_data_func():
-                try:
-                    logger.info(f"Reading {object_type} data: {object_name}")
-                    return await AsyncResourceHandlers.read_object_data(object_name, object_type, limit)
-                except Exception as e:
-                    logger.error(f"Error reading {object_type} data {object_name}: {e}")
-                    return f"Error: {str(e)}"
+#             @app.resource(f"mssql://{object_type}/{schema}/{name}/data",
+#                           name=f"{object_type.title()} Data: {object_name}",
+#                           description=f"Data from {object_type} {object_name} (top {limit} rows)")
+#             async def get_object_data_func():
+#                 try:
+#                     logger.info(f"Reading {object_type} data: {object_name}")
+#                     return await AsyncResourceHandlers.read_object_data(object_name, object_type, limit)
+#                 except Exception as e:
+#                     logger.error(f"Error reading {object_type} data {object_name}: {e}")
+#                     return f"Error: {str(e)}"
 
-            return get_object_data_func
+#             return get_object_data_func
 
-        def create_object_schema_resource(object_name: str, object_type: str):
-            """Factory function to create object schema resource."""
-            schema, name = object_name.split('.', 1)
+#         def create_object_schema_resource(object_name: str, object_type: str):
+#             """Factory function to create object schema resource."""
+#             schema, name = object_name.split('.', 1)
 
-            @app.resource(f"mssql://{object_type}/{schema}/{name}/schema",
-                          name=f"{object_type.title()} Schema: {object_name}",
-                          description=f"Schema information for {object_type} {object_name}")
-            async def get_object_schema_func():
-                try:
-                    logger.info(f"Reading {object_type} schema: {object_name}")
-                    return await AsyncResourceHandlers.read_object_schema(object_name, object_type)
-                except Exception as e:
-                    logger.error(f"Error reading {object_type} schema {object_name}: {e}")
-                    return f"Error: {str(e)}"
+#             @app.resource(f"mssql://{object_type}/{schema}/{name}/schema",
+#                           name=f"{object_type.title()} Schema: {object_name}",
+#                           description=f"Schema information for {object_type} {object_name}")
+#             async def get_object_schema_func():
+#                 try:
+#                     logger.info(f"Reading {object_type} schema: {object_name}")
+#                     return await AsyncResourceHandlers.read_object_schema(object_name, object_type)
+#                 except Exception as e:
+#                     logger.error(f"Error reading {object_type} schema {object_name}: {e}")
+#                     return f"Error: {str(e)}"
 
-            return get_object_schema_func
+#             return get_object_schema_func
 
-        # Register resources for each table
-        for table_name in table_names:
-            create_object_data_resource(table_name, "table")
-            create_object_schema_resource(table_name, "table")
+#         # Register resources for each table
+#         for table_name in table_names:
+#             create_object_data_resource(table_name, "table")
+#             create_object_schema_resource(table_name, "table")
 
-        # Register resources for each view
-        for view_name in view_names:
-            create_object_data_resource(view_name, "view")
-            create_object_schema_resource(view_name, "view")
+#         # Register resources for each view
+#         for view_name in view_names:
+#             create_object_data_resource(view_name, "view")
+#             create_object_schema_resource(view_name, "view")
 
-        total_resources = (len(table_names) + len(view_names)) * 2  # 2 resources per object (data + schema)
-        logger.info(
-            f"Successfully registered {total_resources} resources ({len(table_names)} tables, {len(view_names)} views)")
-        return total_resources
+#         total_resources = (len(table_names) + len(view_names)) * 2  # 2 resources per object (data + schema)
+#         logger.info(
+#             f"Successfully registered {total_resources} resources ({len(table_names)} tables, {len(view_names)} views)")
+#         return total_resources
 
-    except Exception as e:
-        logger.error(f"Failed to register table and view resources: {e}")
-        return 0
+#     except Exception as e:
+#         logger.error(f"Failed to register table and view resources: {e}")
+#         return 0
 
 
 @app.custom_route("/health", methods=["GET"])
