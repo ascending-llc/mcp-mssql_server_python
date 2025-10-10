@@ -1,9 +1,13 @@
 import json
+from pathlib import Path
 from mssql_mcp_server.database.async_operations import AsyncDatabaseOperations
 from mssql_mcp_server.utils.logger import Logger
 from mssql_mcp_server.utils.exceptions import DatabaseOperationError
 
 logger = Logger.get_logger(__name__)
+current_dir = Path(__file__).parent.parent.parent
+column_resources_path = current_dir / "data" / "das-column-resources.sql"
+table_resources_path = current_dir / "data" / "das-table-resources.sql"
 
 
 class AsyncResourceHandlers:
@@ -11,22 +15,14 @@ class AsyncResourceHandlers:
 
     @staticmethod
     async def get_ai_views_column_descriptions():
-        sql = """
-              SELECT v.name   AS ViewName,
-                     c.name   AS ColumnName,
-                     ep.value AS Description
-              FROM sys.views v
-                       INNER JOIN sys.schemas s ON v.schema_id = s.schema_id
-                       LEFT JOIN sys.columns c ON c.object_id = v.object_id
-                       LEFT JOIN sys.extended_properties ep
-                                 ON ep.major_id = v.object_id
-                                     AND ep.name = c.name
-                                     AND ep.minor_id = 0
-                                     AND ep.class = 1
-              WHERE s.name = 'AI'
-                AND v.name = 'v_SL_Reviews'
-              ORDER BY c.column_id \
-              """
+        sql = column_resources_path.read_text()
+        logger.info(f"Getting AI views column descriptions: {sql}")
+        return await AsyncDatabaseOperations.execute_query(sql)
+
+    @staticmethod
+    async def get_ai_views_table_descriptions():
+        sql = table_resources_path.read_text()
+        logger.info(f"Getting AI views table descriptions: {sql}")
         return await AsyncDatabaseOperations.execute_query(sql)
 
     @staticmethod

@@ -93,6 +93,13 @@ class ServerConfig:
     enable_dynamic_resources: bool = True
 
 
+@dataclass
+class ResourceConfig:
+    """dynamically register resources"""
+    column_client: str
+    table_client: str
+
+
 class Settings:
     """Application settings manager."""
 
@@ -101,6 +108,7 @@ class Settings:
         self._async_database_config: Optional[AsyncDatabaseConfig] = None
         self._cache_config: Optional[CacheConfig] = None
         self._server_config: Optional[ServerConfig] = None
+        self._resource_config: Optional[ResourceConfig] = None
 
     @property
     def async_database(self) -> AsyncDatabaseConfig:
@@ -122,6 +130,12 @@ class Settings:
         if self._server_config is None:
             self._server_config = self._load_server_config()
         return self._server_config
+
+    @property
+    def resource(self) -> ResourceConfig:
+        if not self._resource_config:
+            self._resource_config = self._load_resource_config()
+        return self._resource_config
 
     def _load_async_database_config(self) -> AsyncDatabaseConfig:
         """Load async database configuration from environment variables."""
@@ -170,6 +184,12 @@ class Settings:
             enable_async=os.getenv("ENABLE_ASYNC", "true").lower() == "true",
             enable_dynamic_resources=os.getenv("ENABLE_DYNAMIC_RESOURCES", "true").lower() == "true",
             mcp_port=int(os.getenv("FASTMCP_PORT", "8000")),
+        )
+
+    def _load_resource_config(self) -> ResourceConfig:
+        return ResourceConfig(
+            column_client=os.getenv("RAG_RESOURCE_COLUMN_CLIENT"),
+            table_client=os.getenv("RAG_RESOURCE_TABLE_CLIENT")
         )
 
 
