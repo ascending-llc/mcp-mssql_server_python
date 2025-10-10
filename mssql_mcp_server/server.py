@@ -20,6 +20,31 @@ logger = Logger.get_logger(__name__)
 app = FastMCP(name="mssql_mcp_server")
 
 
+def dynamically_register_resources():
+    if settings.resource.column_client:
+        logger.info(f"Registering column {settings.resource.column_client}")
+
+        @app.resource("mssql://database/ai_views/column_descriptions")
+        async def get_ai_views_column_descriptions() -> str:
+            """Get column descriptions for AI schema views to help with SQL generation."""
+            try:
+                return await AsyncResourceHandlers.get_ai_views_column_descriptions()
+            except Exception as e:
+                logger.error(f"Error getting AI views column descriptions: {e}")
+                return f"Error: {str(e)}"
+    if settings.resource.table_client:
+        logger.info(f"Registering table {settings.resource.table_client}")
+
+        @app.resource("mssql://database/ai_views/table_descriptions")
+        async def get_ai_views_table_descriptions() -> str:
+            """Get table level descriptions for AI schema views to help with SQL generation."""
+            try:
+                return await AsyncResourceHandlers.get_ai_views_table_descriptions()
+            except Exception as e:
+                logger.error(f"Error getting AI views table level descriptions: {e}")
+                return f"Error: {str(e)}"
+
+
 # Static database-level resources
 @app.resource("mssql://database/tables")
 async def get_database_tables() -> str:
@@ -339,6 +364,7 @@ async def initialize_server() -> None:
         # Dynamically register resources for each table and view
         total_resources = await register_table_and_view_resources()
         logger.info(f"Server will expose {total_resources} dynamic resources")
+        dynamically_register_resources()
         logger.info("Server initialization completed successfully")
 
     except Exception as e:

@@ -1,13 +1,29 @@
 import json
+from pathlib import Path
 from mssql_mcp_server.database.async_operations import AsyncDatabaseOperations
 from mssql_mcp_server.utils.logger import Logger
 from mssql_mcp_server.utils.exceptions import DatabaseOperationError
 
 logger = Logger.get_logger(__name__)
+current_dir = Path(__file__).parent.parent.parent
+column_resources_path = current_dir / "data" / "das-column-resources.sql"
+table_resources_path = current_dir / "data" / "das-table-resources.sql"
 
 
 class AsyncResourceHandlers:
     """Async MCP resource handlers with dynamic resource generation."""
+
+    @staticmethod
+    async def get_ai_views_column_descriptions():
+        sql = column_resources_path.read_text()
+        logger.info(f"Getting AI views column descriptions: {sql}")
+        return await AsyncDatabaseOperations.execute_query(sql)
+
+    @staticmethod
+    async def get_ai_views_table_descriptions():
+        sql = table_resources_path.read_text()
+        logger.info(f"Getting AI views table descriptions: {sql}")
+        return await AsyncDatabaseOperations.execute_query(sql)
 
     @staticmethod
     async def read_object_data(object_name: str, object_type: str = "table", limit: int = 100) -> str:
