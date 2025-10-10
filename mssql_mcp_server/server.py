@@ -45,27 +45,27 @@ def dynamically_register_resources():
                 return f"Error: {str(e)}"
 
 
-# Static database-level resources
-@app.resource("mssql://database/tables")
-async def get_database_tables() -> str:
-    """List all tables in the database."""
-    try:
-        logger.info("Listing database tables")
-        return await AsyncResourceHandlers.list_database_tables()
-    except Exception as e:
-        logger.error(f"Error listing tables: {e}")
-        return f"Error: {str(e)}"
+# # Static database-level resources
+# @app.resource("mssql://database/tables")
+# async def get_database_tables() -> str:
+#     """List all tables in the database."""
+#     try:
+#         logger.info("Listing database tables")
+#         return await AsyncResourceHandlers.list_database_tables()
+#     except Exception as e:
+#         logger.error(f"Error listing tables: {e}")
+#         return f"Error: {str(e)}"
 
 
-@app.resource("mssql://database/views")
-async def get_database_views() -> str:
-    """List all views in the database."""
-    try:
-        logger.info("Listing database views")
-        return await AsyncResourceHandlers.list_database_views()
-    except Exception as e:
-        logger.error(f"Error listing views: {e}")
-        return f"Error: {str(e)}"
+# @app.resource("mssql://database/views")
+# async def get_database_views() -> str:
+#     """List all views in the database."""
+#     try:
+#         logger.info("Listing database views")
+#         return await AsyncResourceHandlers.list_database_views()
+#     except Exception as e:
+#         logger.error(f"Error listing views: {e}")
+#         return f"Error: {str(e)}"
 
 
 @app.resource("mssql://database/info")
