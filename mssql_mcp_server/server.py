@@ -362,8 +362,8 @@ async def initialize_server() -> None:
         logger.info(f"Pre-loaded {len(table_names)} table names and {len(view_names)} view names into cache")
 
         # Dynamically register resources for each table and view
-        total_resources = await register_table_and_view_resources()
-        logger.info(f"Server will expose {total_resources} dynamic resources")
+        # total_resources = await register_table_and_view_resources()
+        # logger.info(f"Server will expose {total_resources} dynamic resources")
         dynamically_register_resources()
         logger.info("Server initialization completed successfully")
 
