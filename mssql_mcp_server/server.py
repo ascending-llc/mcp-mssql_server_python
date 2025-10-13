@@ -21,7 +21,9 @@ app = FastMCP(name="mssql_mcp_server")
 
 
 def dynamically_register_resources():
+    counts = 0
     if settings.resource.column_client:
+        counts += 1
         logger.info(f"Registering column {settings.resource.column_client}")
 
         @app.resource("mssql://database/ai_views/column_descriptions")
@@ -33,6 +35,7 @@ def dynamically_register_resources():
                 logger.error(f"Error getting AI views column descriptions: {e}")
                 return f"Error: {str(e)}"
     if settings.resource.table_client:
+        counts += 1
         logger.info(f"Registering table {settings.resource.table_client}")
 
         @app.resource("mssql://database/ai_views/table_descriptions")
@@ -43,6 +46,7 @@ def dynamically_register_resources():
             except Exception as e:
                 logger.error(f"Error getting AI views table level descriptions: {e}")
                 return f"Error: {str(e)}"
+    return counts
 
 
 # Static database-level resources
@@ -383,8 +387,8 @@ async def initialize_server() -> None:
 
         # Dynamically register resources for each table and view
         total_resources = await register_table_and_view_resources()
-        logger.info(f"Server will expose {total_resources} dynamic resources")
-        dynamically_register_resources()
+        counts = dynamically_register_resources()
+        logger.info(f"Server will expose {total_resources + counts} dynamic resources")
         logger.info("Server initialization completed successfully")
 
     except Exception as e:
