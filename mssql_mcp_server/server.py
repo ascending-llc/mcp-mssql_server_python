@@ -21,7 +21,9 @@ app = FastMCP(name="mssql_mcp_server")
 
 
 def dynamically_register_resources():
+    counts = 0
     if settings.resource.column_client:
+        counts += 1
         logger.info(f"Registering column {settings.resource.column_client}")
 
         @app.resource("mssql://database/ai_views/column_descriptions")
@@ -33,6 +35,7 @@ def dynamically_register_resources():
                 logger.error(f"Error getting AI views column descriptions: {e}")
                 return f"Error: {str(e)}"
     if settings.resource.table_client:
+        counts += 1
         logger.info(f"Registering table {settings.resource.table_client}")
 
         @app.resource("mssql://database/ai_views/table_descriptions")
@@ -43,6 +46,7 @@ def dynamically_register_resources():
             except Exception as e:
                 logger.error(f"Error getting AI views table level descriptions: {e}")
                 return f"Error: {str(e)}"
+    return counts
 
 
 # Static database-level resources
@@ -79,70 +83,90 @@ async def get_database_info_resource() -> str:
         return f"Error: {str(e)}"
 
 
-# async def register_table_and_view_resources():
-#     """Dynamically register resources for each table and view."""
-#     try:
-#         # Get table and view names
-#         from mssql_mcp_server.database.async_operations import AsyncDatabaseOperations
-#         table_and_view_data = await AsyncDatabaseOperations.get_all_table_and_view_names()
-#         table_names = table_and_view_data["tables"]
-#         view_names = table_and_view_data["views"]
+async def register_table_and_view_resources():
+    """Dynamically register resources grouped by schema."""
+    try:
+        # Get table and view names
+        from mssql_mcp_server.database.async_operations import AsyncDatabaseOperations
+        table_and_view_data = await AsyncDatabaseOperations.get_all_table_and_view_names()
+        table_names = table_and_view_data["tables"]
+        view_names = table_and_view_data["views"]
 
-#         logger.info(f"Registering resources for {len(table_names)} tables and {len(view_names)} views...")
+        logger.info(f"Registering resources for {len(table_names)} tables and {len(view_names)} views...")
 
-#         def create_object_data_resource(object_name: str, object_type: str):
-#             """Factory function to create object data resource."""
-#             schema, name = object_name.split('.', 1)
-#             limit = 100  # Default limit for data retrieval
+        # Group tables and views by schema
+        schema_objects = {}
+        for table_name in table_names:
+            schema, name = table_name.split('.', 1)
+            if schema not in schema_objects:
+                schema_objects[schema] = {"tables": [], "views": []}
+            schema_objects[schema]["tables"].append(name)
 
-#             @app.resource(f"mssql://{object_type}/{schema}/{name}/data",
-#                           name=f"{object_type.title()} Data: {object_name}",
-#                           description=f"Data from {object_type} {object_name} (top {limit} rows)")
-#             async def get_object_data_func():
-#                 try:
-#                     logger.info(f"Reading {object_type} data: {object_name}")
-#                     return await AsyncResourceHandlers.read_object_data(object_name, object_type, limit)
-#                 except Exception as e:
-#                     logger.error(f"Error reading {object_type} data {object_name}: {e}")
-#                     return f"Error: {str(e)}"
+        for view_name in view_names:
+            schema, name = view_name.split('.', 1)
+            if schema not in schema_objects:
+                schema_objects[schema] = {"tables": [], "views": []}
+            schema_objects[schema]["views"].append(name)
 
-#             return get_object_data_func
+        logger.info(f"schema_objects: {schema_objects}")
 
-#         def create_object_schema_resource(object_name: str, object_type: str):
-#             """Factory function to create object schema resource."""
-#             schema, name = object_name.split('.', 1)
+        def create_schema_resource(schema_name: str, objects: dict):
+            """Factory function to create schema-level resource."""
 
-#             @app.resource(f"mssql://{object_type}/{schema}/{name}/schema",
-#                           name=f"{object_type.title()} Schema: {object_name}",
-#                           description=f"Schema information for {object_type} {object_name}")
-#             async def get_object_schema_func():
-#                 try:
-#                     logger.info(f"Reading {object_type} schema: {object_name}")
-#                     return await AsyncResourceHandlers.read_object_schema(object_name, object_type)
-#                 except Exception as e:
-#                     logger.error(f"Error reading {object_type} schema {object_name}: {e}")
-#                     return f"Error: {str(e)}"
+            @app.resource(f"mssql://schema/{schema_name}",
+                          name=f"Schema: {schema_name}",
+                          description=f"All tables ({len(objects['tables'])}) "
+                                      f"and views ({len(objects['views'])}) in schema {schema_name}")
+            async def get_schema_func():
+                try:
+                    logger.info(f"Reading schema: {schema_name}")
 
-#             return get_object_schema_func
+                    result = {
+                        "schema": schema_name,
+                        "tables": [],
+                        "views": []
+                    }
 
-#         # Register resources for each table
-#         for table_name in table_names:
-#             create_object_data_resource(table_name, "table")
-#             create_object_schema_resource(table_name, "table")
+                    # Get info for all tables in this schema
+                    for table_name in objects["tables"]:
+                        full_name = f"{schema_name}.{table_name}"
+                        try:
+                            schema_info = await AsyncResourceHandlers.read_object_schema(full_name, "table")
+                            result["tables"].append({
+                                "name": table_name,
+                                "schema": schema_info
+                            })
+                        except Exception as e:
+                            logger.error(f"Error reading table {full_name}: {e}")
 
-#         # Register resources for each view
-#         for view_name in view_names:
-#             create_object_data_resource(view_name, "view")
-#             create_object_schema_resource(view_name, "view")
+                    # Get info for all views in this schema
+                    for view_name in objects["views"]:
+                        full_name = f"{schema_name}.{view_name}"
+                        try:
+                            schema_info = await AsyncResourceHandlers.read_object_schema(full_name, "view")
+                            result["views"].append({
+                                "name": view_name,
+                                "schema": schema_info
+                            })
+                        except Exception as e:
+                            logger.error(f"Error reading view {full_name}: {e}")
+                    return result
+                except Exception as e:
+                    logger.error(f"Error reading schema {schema_name}: {e}")
+                    return f"Error: {str(e)}"
+            return get_schema_func
 
-#         total_resources = (len(table_names) + len(view_names)) * 2  # 2 resources per object (data + schema)
-#         logger.info(
-#             f"Successfully registered {total_resources} resources ({len(table_names)} tables, {len(view_names)} views)")
-#         return total_resources
+        # Register one resource per schema
+        for schema_name, objects in schema_objects.items():
+            create_schema_resource(schema_name, objects)
 
-#     except Exception as e:
-#         logger.error(f"Failed to register table and view resources: {e}")
-#         return 0
+        total_resources = len(schema_objects)
+        logger.info(f"Successfully registered {total_resources} schema "
+                    f"resources (covering {len(table_names)} tables, {len(view_names)} views)")
+        return total_resources
+    except Exception as e:
+        logger.error(f"Failed to register table and view resources: {e}")
+        return 0
 
 
 @app.custom_route("/health", methods=["GET"])
@@ -362,9 +386,9 @@ async def initialize_server() -> None:
         logger.info(f"Pre-loaded {len(table_names)} table names and {len(view_names)} view names into cache")
 
         # Dynamically register resources for each table and view
-        # total_resources = await register_table_and_view_resources()
-        # logger.info(f"Server will expose {total_resources} dynamic resources")
-        dynamically_register_resources()
+        total_resources = await register_table_and_view_resources()
+        counts = dynamically_register_resources()
+        logger.info(f"Server will expose {total_resources + counts} dynamic resources")
         logger.info("Server initialization completed successfully")
 
     except Exception as e:
