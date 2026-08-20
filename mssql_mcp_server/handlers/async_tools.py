@@ -47,12 +47,13 @@ class AsyncToolHandlers:
             if not schema_info:
                 return f"No schema information found for table '{table_name}'"
 
-            # Format schema information as CSV
+            # Format schema information as CSV with table name header
+            result_lines = [f"Table: {table_name}"]
             headers = [
                 "Column Name", "Data Type", "Is Nullable", "Default Value",
                 "Max Length", "Precision", "Scale"
             ]
-            result_lines = [",".join(headers)]
+            result_lines.append(",".join(headers))
 
             for col in schema_info:
                 row = [
@@ -194,6 +195,35 @@ class AsyncToolHandlers:
             error_msg = f"Error clearing cache: {str(e)}"
             logger.error(error_msg)
             return error_msg
+
+    @staticmethod
+    async def search_tables(keyword: str) -> str:
+        """Search tables and views by keyword, returning matches with full column lists."""
+        try:
+            keyword_lower = keyword.lower()
+            tables = await AsyncDatabaseOperations.get_table_names()
+            views = await AsyncDatabaseOperations.get_view_names()
+
+            all_objects = [(name, "table") for name in tables] + [(name, "view") for name in views]
+            matches = [(name, obj_type) for name, obj_type in all_objects if keyword_lower in name.lower()]
+
+            if not matches:
+                return f"No tables or views found matching '{keyword}'. Available objects:\n" + "\n".join(
+                    name for name, _ in all_objects
+                )
+
+            result_parts = [f"Found {len(matches)} match(es) for '{keyword}':\n"]
+            for name, obj_type in matches:
+                schema_info = await AsyncDatabaseOperations.get_object_schema(name, obj_type)
+                columns = [col["column_name"] for col in schema_info] if schema_info else []
+                result_parts.append(f"[{obj_type}] {name}")
+                result_parts.append(f"  Columns: {', '.join(columns)}\n")
+
+            return "\n".join(result_parts)
+
+        except Exception as e:
+            logger.error(f"Error searching tables: {e}")
+            return f"Error searching tables: {str(e)}"
 
     @staticmethod
     async def invalidate_table_cache(table_name: str = None) -> str:

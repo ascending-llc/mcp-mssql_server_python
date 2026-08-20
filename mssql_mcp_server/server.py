@@ -211,7 +211,9 @@ async def health_check(request: Request) -> JSONResponse:
 async def execute_sql(query: str, allow_modifications: bool = False, ctx: Optional[Context] = None) -> str:
     """
     Execute an SQL query on the MSSQL server.
-    
+    IMPORTANT: Before writing a query, call get_table_schema first to get the exact column names.
+    Do NOT guess column names — wrong names cause errors.
+
     Args:
         query: The SQL query to execute
         allow_modifications: Whether to allow modification queries (default: false)
@@ -227,22 +229,43 @@ async def execute_sql(query: str, allow_modifications: bool = False, ctx: Option
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+@app.tool()
 async def get_table_schema(table_name: str) -> str:
     """
-    Get schema information for a specific table.
-    
+    Get column names and types for a table or view. ALWAYS call this before writing SQL queries
+    to know the exact column names — do not guess column names.
+
     Args:
-        table_name: Name of the table to describe
-    
+        table_name: Full name including schema, e.g. 'AI.v_SL_Accounts' or 'dbo.Users'
+
     Returns:
-        Table schema information
+        Table/view name and its column schema in CSV format
     """
     try:
         logger.info(f"Getting schema for table: {table_name}")
         return await AsyncToolHandlers.get_table_schema(table_name)
     except Exception as e:
         logger.error(f"Error getting table schema: {e}")
+        return f"Error: {str(e)}"
+
+
+@app.tool()
+async def search_tables(keyword: str) -> str:
+    """
+    Search for tables and views by keyword. Returns matching names with their full column lists.
+    Use this to find the right table before writing SQL.
+
+    Args:
+        keyword: Search keyword (e.g. 'account', 'review', 'order')
+
+    Returns:
+        Matching tables/views with their column names
+    """
+    try:
+        logger.info(f"Searching tables with keyword: {keyword}")
+        return await AsyncToolHandlers.search_tables(keyword)
+    except Exception as e:
+        logger.error(f"Error searching tables: {e}")
         return f"Error: {str(e)}"
 
 
@@ -353,6 +376,53 @@ async def invalidate_table_cache(table_name: str = None) -> str:
         return f"Error: {str(e)}"
 
 
+_INSTRUCTIONS_MAX_CHARS = 8000
+
+_INSTRUCTIONS_WORKFLOW = (
+    "## SQL Query Workflow\n"
+    "1. Use search_tables(keyword) to find tables/views matching your topic — it returns column names too.\n"
+    "2. If needed, use get_table_schema(schema.table_name) for full column details.\n"
+    "3. Use exact column names from step 1 or 2 in your SQL. NEVER guess column names.\n\n"
+)
+
+
+def _inject_instructions(table_names: list, view_names: list) -> None:
+    """Build table catalog and set MCP instructions. Falls back to summary if catalog exceeds size limit."""
+    schema_objects = {}
+    for name in table_names:
+        schema, tbl = name.split('.', 1)
+        schema_objects.setdefault(schema, {"tables": [], "views": []})["tables"].append(tbl)
+    for name in view_names:
+        schema, vw = name.split('.', 1)
+        schema_objects.setdefault(schema, {"tables": [], "views": []})["views"].append(vw)
+
+    # Full catalog: list every table/view name
+    catalog_lines = []
+    for schema, objs in sorted(schema_objects.items()):
+        items = [f"  Tables: {', '.join(objs['tables'])}"] if objs['tables'] else []
+        items += [f"  Views: {', '.join(objs['views'])}"] if objs['views'] else []
+        catalog_lines.append(f"[{schema}]\n" + "\n".join(items))
+
+    instructions = _INSTRUCTIONS_WORKFLOW + "## Available Tables and Views\n" + "\n".join(catalog_lines)
+
+    if len(instructions) > _INSTRUCTIONS_MAX_CHARS:
+        # ponytail: fallback to schema-level summary, full names via search_tables
+        summary_lines = [
+            f"[{schema}] {len(objs['tables'])} tables, {len(objs['views'])} views"
+            for schema, objs in sorted(schema_objects.items())
+        ]
+        instructions = (
+            _INSTRUCTIONS_WORKFLOW
+            + f"## Database Overview ({len(table_names)} tables, {len(view_names)} views)\n"
+            + "\n".join(summary_lines)
+            + "\n\nUse search_tables(keyword) to find specific table names and columns."
+        )
+        logger.info(f"Instructions truncated to summary mode ({len(instructions)} chars)")
+
+    app._mcp_server.instructions = instructions
+    logger.info(f"Instructions injected ({len(instructions)} chars, {len(table_names)} tables, {len(view_names)} views)")
+
+
 async def initialize_server() -> None:
     """Initialize server components."""
     try:
@@ -384,6 +454,9 @@ async def initialize_server() -> None:
         table_names = table_and_view_data["tables"]
         view_names = table_and_view_data["views"]
         logger.info(f"Pre-loaded {len(table_names)} table names and {len(view_names)} view names into cache")
+
+        # Inject instructions with table catalog
+        _inject_instructions(table_names, view_names)
 
         # Dynamically register resources for each table and view
         total_resources = await register_table_and_view_resources()
