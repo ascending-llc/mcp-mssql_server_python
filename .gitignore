@@ -24,5 +24,8 @@ uv.lock
 *.dist-info/
 .env
 
+tools/
+
+
 
 
