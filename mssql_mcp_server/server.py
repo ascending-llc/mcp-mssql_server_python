@@ -274,7 +274,7 @@ async def search_tables(keyword: str) -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+# @app.tool()
 async def list_tables() -> str:
     """
     Get a list of all tables in the database.
@@ -291,7 +291,7 @@ async def list_tables() -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+# @app.tool()
 async def get_table_data(table_name: str, limit: int = None) -> str:
     """
     Get data from a specific table.
@@ -311,7 +311,7 @@ async def get_table_data(table_name: str, limit: int = None) -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+# @app.tool()
 async def test_connection() -> str:
     """
     Test the database connection and get connection info.
@@ -327,7 +327,7 @@ async def test_connection() -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+# @app.tool()
 async def get_database_info() -> str:
     """
     Get comprehensive database information.
@@ -343,7 +343,7 @@ async def get_database_info() -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+# @app.tool()
 async def clear_cache(pattern: str = "") -> str:
     """
     Clear cache entries.
@@ -362,7 +362,7 @@ async def clear_cache(pattern: str = "") -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+# @app.tool()
 async def invalidate_table_cache(table_name: str = None) -> str:
     """
     Invalidate cache for specific table or all tables.
