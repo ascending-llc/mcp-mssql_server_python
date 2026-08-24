@@ -17,7 +17,12 @@ load_dotenv()
 
 logger = Logger.get_logger(__name__)
 
-app = FastMCP(name="mssql_mcp_server")
+from pathlib import Path
+
+_instructions_path = Path(__file__).parent.parent / "data" / "server-instructions.md"
+_SERVER_INSTRUCTIONS = _instructions_path.read_text()
+
+app = FastMCP(name="mssql_mcp_server", instructions=_SERVER_INSTRUCTIONS)
 
 
 def dynamically_register_resources():
@@ -211,7 +216,9 @@ async def health_check(request: Request) -> JSONResponse:
 async def execute_sql(query: str, allow_modifications: bool = False, ctx: Optional[Context] = None) -> str:
     """
     Execute an SQL query on the MSSQL server.
-    
+    IMPORTANT: Before writing a query, call get_table_schema first to get the exact column names.
+    Do NOT guess column names — wrong names cause errors.
+
     Args:
         query: The SQL query to execute
         allow_modifications: Whether to allow modification queries (default: false)
@@ -227,16 +234,17 @@ async def execute_sql(query: str, allow_modifications: bool = False, ctx: Option
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+@app.tool()
 async def get_table_schema(table_name: str) -> str:
     """
-    Get schema information for a specific table.
-    
+    Get column names and types for a table or view. ALWAYS call this before writing SQL queries
+    to know the exact column names — do not guess column names.
+
     Args:
-        table_name: Name of the table to describe
-    
+        table_name: Full name including schema, e.g. 'AI.v_SL_Accounts' or 'dbo.Users'
+
     Returns:
-        Table schema information
+        Table/view name and its column schema in CSV format
     """
     try:
         logger.info(f"Getting schema for table: {table_name}")
@@ -246,7 +254,27 @@ async def get_table_schema(table_name: str) -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+@app.tool()
+async def search_tables(keyword: str) -> str:
+    """
+    Search for tables and views by keyword. Returns matching names with their full column lists.
+    Use this to find the right table before writing SQL.
+
+    Args:
+        keyword: Search keyword (e.g. 'account', 'review', 'order')
+
+    Returns:
+        Matching tables/views with their column names
+    """
+    try:
+        logger.info(f"Searching tables with keyword: {keyword}")
+        return await AsyncToolHandlers.search_tables(keyword)
+    except Exception as e:
+        logger.error(f"Error searching tables: {e}")
+        return f"Error: {str(e)}"
+
+
+# @app.tool()
 async def list_tables() -> str:
     """
     Get a list of all tables in the database.
@@ -263,7 +291,7 @@ async def list_tables() -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+# @app.tool()
 async def get_table_data(table_name: str, limit: int = None) -> str:
     """
     Get data from a specific table.
@@ -283,7 +311,7 @@ async def get_table_data(table_name: str, limit: int = None) -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+# @app.tool()
 async def test_connection() -> str:
     """
     Test the database connection and get connection info.
@@ -299,7 +327,7 @@ async def test_connection() -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+# @app.tool()
 async def get_database_info() -> str:
     """
     Get comprehensive database information.
@@ -315,7 +343,7 @@ async def get_database_info() -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+# @app.tool()
 async def clear_cache(pattern: str = "") -> str:
     """
     Clear cache entries.
@@ -334,7 +362,7 @@ async def clear_cache(pattern: str = "") -> str:
         return f"Error: {str(e)}"
 
 
-@app.tool(enabled=False)
+# @app.tool()
 async def invalidate_table_cache(table_name: str = None) -> str:
     """
     Invalidate cache for specific table or all tables.

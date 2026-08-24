@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional, AsyncGenerator
 import aioodbc
@@ -57,16 +58,28 @@ class AsyncDatabasePool:
             raise DatabaseConnectionError("Connection pool not initialized")
 
         connection = None
+        acquire_timeout = settings.async_database.pool_timeout
         try:
-            logger.debug("Acquiring connection from pool")
-            connection = await self._pool.acquire()
+            pool_info = self.pool_info
+            logger.debug(f"Acquiring connection from pool (used={pool_info['used']}/{pool_info['maxsize']}, free={pool_info['free']})")
+            connection = await asyncio.wait_for(self._pool.acquire(), timeout=acquire_timeout)
             logger.debug("Connection acquired successfully")
             yield connection
-            
+
+        except asyncio.TimeoutError:
+            pool_info = self.pool_info
+            logger.error(f"Connection pool acquire timed out after {acquire_timeout}s (used={pool_info['used']}/{pool_info['maxsize']}, free={pool_info['free']})")
+            raise DatabaseConnectionError(
+                f"Could not acquire database connection within {acquire_timeout}s — pool exhausted "
+                f"(used={pool_info['used']}/{pool_info['maxsize']}). "
+                f"Possible causes: slow queries holding connections, or pool_max_size too small."
+            )
+        except DatabaseConnectionError:
+            raise
         except Exception as e:
             logger.error(f"Error with database connection: {e}")
             raise DatabaseConnectionError(f"Database connection error: {e}")
-            
+
         finally:
             if connection:
                 try:
