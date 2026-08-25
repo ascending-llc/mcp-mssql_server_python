@@ -35,13 +35,16 @@ RUN odbcinst -q -d -n "ODBC Driver 18 for SQL Server"
 # Set working directory
 WORKDIR /app
 
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 # Copy dependency files and install Python packages
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy project files
 COPY . .
+RUN uv sync --frozen --no-dev
 
 
 # FastMCP server configuration
@@ -68,10 +71,10 @@ ENV ENABLE_ASYNC=true \
     BATCH_ROWS_SIZE=200
 
 HEALTHCHECK --interval=60s --timeout=30s --start-period=120s --retries=5 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3333', timeout=20)" || exit 1
+    CMD uv run python -c "import urllib.request; urllib.request.urlopen('http://localhost:3333', timeout=20)" || exit 1
 
 # Expose port
 EXPOSE 3333
 
 # Start the server
-CMD ["python", "-m", "mssql_mcp_server.main"]
+CMD ["uv", "run", "python", "-m", "mssql_mcp_server.main"]

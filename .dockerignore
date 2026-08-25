@@ -4,9 +4,7 @@
 .gitattributes
 
 # Documentation
-README.md
 SECURITY.md
-*.md
 docs/
 
 # Environment files

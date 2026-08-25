@@ -19,7 +19,7 @@ This ensures safer database exploration, strict permission enforcement, and logg
 ## Installation
 
 ```bash
-pip install -e .
+uv sync
 ```
 
 ## Configuration
@@ -76,10 +76,10 @@ To integrate with **Claude Desktop**, add this configuration to `claude_desktop_
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+uv sync
 
 # Run the server
-python -m mssql_mcp_server
+uv run python -m mssql_mcp_server
 ```
 
 ## Development
@@ -89,15 +89,11 @@ python -m mssql_mcp_server
 git clone https://github.com/yourusername/mssql_mcp_server.git
 cd mssql_mcp_server
 
-# Set up a virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install development dependencies
-pip install -r requirements-dev.txt
+# Install with dev dependencies
+uv sync
 
 # Run tests
-pytest
+uv run pytest
 ```
 
 ## Docker build
