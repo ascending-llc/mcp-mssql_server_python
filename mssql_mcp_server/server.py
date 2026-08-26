@@ -33,11 +33,11 @@ def dynamically_register_resources():
         counts += 1
         logger.info(f"Registering column {settings.resource.column_client}")
 
-        @app.resource("mssql://database/ai_views/column_descriptions")
-        async def get_ai_views_column_descriptions() -> list[ResourceContent]:
+        @app.resource("mssql://database/ai/column_descriptions")
+        async def get_column_descriptions() -> list[ResourceContent]:
             """Get column descriptions for AI schema views to help with SQL generation."""
             try:
-                return await AsyncResourceHandlers.get_ai_views_column_descriptions()
+                return await AsyncResourceHandlers.get_column_descriptions()
             except Exception as e:
                 logger.error(f"Error getting AI views column descriptions: {e}")
                 return [ResourceContent(f"Error: {str(e)}")]
@@ -45,13 +45,13 @@ def dynamically_register_resources():
         counts += 1
         logger.info(f"Registering table {settings.resource.table_client}")
 
-        @app.resource("mssql://database/ai_views/table_descriptions")
-        async def get_ai_views_table_descriptions() -> list[ResourceContent]:
-            """Get table level descriptions for AI schema views to help with SQL generation."""
+        @app.resource("mssql://database/ai/view_descriptions")
+        async def get_view_descriptions() -> list[ResourceContent]:
+            """Get view level descriptions for AI schema views to help with SQL generation."""
             try:
-                return await AsyncResourceHandlers.get_ai_views_table_descriptions()
+                return await AsyncResourceHandlers.get_view_descriptions()
             except Exception as e:
-                logger.error(f"Error getting AI views table level descriptions: {e}")
+                logger.error(f"Error getting AI views view level descriptions: {e}")
                 return [ResourceContent(f"Error: {str(e)}")]
     return counts
 

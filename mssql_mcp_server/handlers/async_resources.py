@@ -15,16 +15,16 @@ class AsyncResourceHandlers:
     """Async MCP resource handlers with dynamic resource generation."""
 
     @staticmethod
-    async def get_ai_views_column_descriptions() -> list[ResourceContent]:
+    async def get_column_descriptions() -> list[ResourceContent]:
         sql = column_resources_path.read_text()
         logger.info(f"Getting AI views column descriptions: {sql}")
         result = await AsyncDatabaseOperations.execute_query(sql)
         return result.to_resource_content()
 
     @staticmethod
-    async def get_ai_views_table_descriptions() -> list[ResourceContent]:
+    async def get_view_descriptions() -> list[ResourceContent]:
         sql = table_resources_path.read_text()
-        logger.info(f"Getting AI views table descriptions: {sql}")
+        logger.info(f"Getting AI views view descriptions: {sql}")
         result = await AsyncDatabaseOperations.execute_query(sql)
         return result.to_resource_content()
 
