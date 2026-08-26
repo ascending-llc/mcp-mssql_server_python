@@ -2,19 +2,23 @@ import time
 from typing import List, Tuple, Any, Dict, Optional
 from dataclasses import dataclass
 import asyncio
+
+from fastmcp.resources import ResourceContent
 from fastmcp.server.dependencies import get_context
+from fastmcp.tools import ToolResult
+
 from mssql_mcp_server.database.async_connection import get_pool
 from mssql_mcp_server.config.settings import settings
 from mssql_mcp_server.utils.logger import Logger
 from mssql_mcp_server.utils.exceptions import DatabaseOperationError
 from mssql_mcp_server.utils.cache import cache_manager
-
 logger = Logger.get_logger(__name__)
 
 
 @dataclass
 class QueryResult:
-    """Result of a database query."""
+    """Result of a database query. Boundaries convert it to the fastmcp type
+    they need: tools -> to_tool_result(), resources -> to_resource_content()."""
 
     columns: List[str]
     rows: List[List[Any]]
@@ -42,6 +46,22 @@ class QueryResult:
             lines.append(",".join(formatted_row))
 
         return "\n".join(lines)
+
+    def to_tool_result(self) -> ToolResult:
+        """Wrap as a fastmcp ToolResult for tool responses (CSV + metadata)."""
+        return ToolResult(
+            content=self.to_csv(),
+            meta={
+                "columns": self.columns,
+                "row_count": self.row_count,
+                "query_type": self.query_type,
+                "execution_time": self.execution_time,
+            },
+        )
+
+    def to_resource_content(self) -> List[ResourceContent]:
+        """Wrap as fastmcp resource contents for resource responses (CSV text)."""
+        return [ResourceContent(self.to_csv(), mime_type="text/csv")]
 
 
 class AsyncDatabaseOperations:
@@ -152,7 +172,7 @@ class AsyncDatabaseOperations:
         cached_data = await cache_manager.get_table_data(cache_key)
         if cached_data is not None:
             logger.debug(f"Using cached data for {object_type}: {object_name}")
-            # Parse cached CSV back to QueryResult
+            # Parse cached CSV back into a result
             lines = cached_data.split('\n')
             if lines:
                 columns = lines[0].split(',')
@@ -203,7 +223,7 @@ class AsyncDatabaseOperations:
 
                     # Cache the result
                     await cache_manager.set_table_data(cache_key, result.to_csv())
-                    await ctx.report_progress(progress=result.row_count, total=result.row_count)
+                    await ctx.report_progress(progress=len(rows_list), total=len(rows_list))
                     return result
 
         except Exception as e:

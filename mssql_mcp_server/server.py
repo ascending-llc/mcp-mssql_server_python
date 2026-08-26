@@ -4,6 +4,8 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp import Context
+from fastmcp.resources import ResourceContent
+from fastmcp.tools import ToolResult
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from mssql_mcp_server.config.settings import settings
@@ -31,26 +33,26 @@ def dynamically_register_resources():
         counts += 1
         logger.info(f"Registering column {settings.resource.column_client}")
 
-        @app.resource("mssql://database/ai_views/column_descriptions")
-        async def get_ai_views_column_descriptions() -> str:
+        @app.resource("mssql://database/ai/column_descriptions")
+        async def get_column_descriptions() -> list[ResourceContent]:
             """Get column descriptions for AI schema views to help with SQL generation."""
             try:
-                return await AsyncResourceHandlers.get_ai_views_column_descriptions()
+                return await AsyncResourceHandlers.get_column_descriptions()
             except Exception as e:
                 logger.error(f"Error getting AI views column descriptions: {e}")
-                return f"Error: {str(e)}"
+                return [ResourceContent(f"Error: {str(e)}")]
     if settings.resource.table_client:
         counts += 1
         logger.info(f"Registering table {settings.resource.table_client}")
 
-        @app.resource("mssql://database/ai_views/table_descriptions")
-        async def get_ai_views_table_descriptions() -> str:
-            """Get table level descriptions for AI schema views to help with SQL generation."""
+        @app.resource("mssql://database/ai/view_descriptions")
+        async def get_view_descriptions() -> list[ResourceContent]:
+            """Get view level descriptions for AI schema views to help with SQL generation."""
             try:
-                return await AsyncResourceHandlers.get_ai_views_table_descriptions()
+                return await AsyncResourceHandlers.get_view_descriptions()
             except Exception as e:
-                logger.error(f"Error getting AI views table level descriptions: {e}")
-                return f"Error: {str(e)}"
+                logger.error(f"Error getting AI views view level descriptions: {e}")
+                return [ResourceContent(f"Error: {str(e)}")]
     return counts
 
 
@@ -213,7 +215,7 @@ async def health_check(request: Request) -> JSONResponse:
 
 
 @app.tool()
-async def execute_sql(query: str, allow_modifications: bool = False, ctx: Optional[Context] = None) -> str:
+async def execute_sql(query: str, allow_modifications: bool = False, ctx: Optional[Context] = None) -> ToolResult:
     """
     Execute an SQL query on the MSSQL server.
     IMPORTANT: Before writing a query, call get_table_schema first to get the exact column names.
@@ -231,7 +233,7 @@ async def execute_sql(query: str, allow_modifications: bool = False, ctx: Option
         return await AsyncToolHandlers.execute_sql(query, allow_modifications)
     except Exception as e:
         logger.error(f"Error executing SQL: {e}")
-        return f"Error: {str(e)}"
+        return ToolResult(f"Error: {str(e)}", is_error=True)
 
 
 @app.tool()
