@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from fastmcp.resources import ResourceContent
 from mssql_mcp_server.database.async_operations import AsyncDatabaseOperations
 from mssql_mcp_server.utils.logger import Logger
 from mssql_mcp_server.utils.exceptions import DatabaseOperationError
@@ -14,16 +15,18 @@ class AsyncResourceHandlers:
     """Async MCP resource handlers with dynamic resource generation."""
 
     @staticmethod
-    async def get_ai_views_column_descriptions():
+    async def get_ai_views_column_descriptions() -> list[ResourceContent]:
         sql = column_resources_path.read_text()
         logger.info(f"Getting AI views column descriptions: {sql}")
-        return await AsyncDatabaseOperations.execute_query(sql)
+        result = await AsyncDatabaseOperations.execute_query(sql)
+        return result.to_resource_content()
 
     @staticmethod
-    async def get_ai_views_table_descriptions():
+    async def get_ai_views_table_descriptions() -> list[ResourceContent]:
         sql = table_resources_path.read_text()
         logger.info(f"Getting AI views table descriptions: {sql}")
-        return await AsyncDatabaseOperations.execute_query(sql)
+        result = await AsyncDatabaseOperations.execute_query(sql)
+        return result.to_resource_content()
 
     @staticmethod
     async def read_object_data(object_name: str, object_type: str = "table", limit: int = 100) -> str:
@@ -38,7 +41,8 @@ class AsyncResourceHandlers:
 
             csv_data = result.to_csv()
             logger.info(
-                f"Retrieved {result.row_count} rows from {object_type} {object_name} in {result.execution_time:.3f}s")
+                f"Retrieved {result.row_count} rows from {object_type} {object_name} "
+                f"in {result.execution_time:.3f}s")
             return csv_data
 
         except DatabaseOperationError as e:

@@ -1,5 +1,6 @@
 import json
 from typing import List
+from fastmcp.tools.tool import ToolResult
 from mssql_mcp_server.database.async_operations import AsyncDatabaseOperations
 from mssql_mcp_server.config.settings import settings
 from mssql_mcp_server.utils.logger import Logger
@@ -12,29 +13,30 @@ class AsyncToolHandlers:
     """Async MCP tool handlers."""
 
     @staticmethod
-    async def execute_sql(query: str, allow_modifications: bool = False) -> str:
+    async def execute_sql(query: str, allow_modifications: bool = False) -> ToolResult:
         """Execute an SQL query on the MSSQL server with timeout and progress reporting."""
         logger.info(f"Executing SQL query: {query[:100]}...")
-        
+
         try:
             result = await AsyncDatabaseOperations.execute_query(query, allow_modifications)
+
             if result.query_type in ["select", "show_tables", "cached_select"]:
                 if result.row_count == 0:
-                    return "Query executed successfully but returned no results."
+                    return ToolResult("Query executed successfully but returned no results.")
                 logger.info(f"Query returned {result.row_count} rows in {result.execution_time:.3f}s")
-                return result.to_csv()
+                return result.to_tool_result()
 
             elif result.query_type == "modification":
                 message = f"Query executed successfully. Rows affected: {result.row_count}"
                 if result.execution_time > 0:
                     message += f" (Execution time: {result.execution_time:.3f}s)"
-                return message
+                return ToolResult(message)
             else:
-                return "Query executed successfully."
+                return ToolResult("Query executed successfully.")
         except Exception as e:
             error_msg = f"Unexpected error: {str(e)}"
             logger.error(error_msg)
-            return error_msg
+            return ToolResult(error_msg, is_error=True)
 
     @staticmethod
     async def get_table_schema(table_name: str) -> str:
@@ -94,7 +96,7 @@ class AsyncToolHandlers:
             return [f"Unexpected error: {str(e)}"]
 
     @staticmethod
-    async def get_table_data(table_name: str, limit: int = None) -> str:
+    async def get_table_data(table_name: str, limit: int = None) -> ToolResult:
         """Get data from a specific table."""
         try:
             if limit is None:
@@ -105,20 +107,20 @@ class AsyncToolHandlers:
             result = await AsyncDatabaseOperations.get_table_data(table_name, limit)
 
             if result.row_count == 0:
-                return f"Table '{table_name}' is empty."
+                return ToolResult(f"Table '{table_name}' is empty.")
 
-            csv_data = result.to_csv()
-            logger.info(f"Retrieved {result.row_count} rows from table {table_name} in {result.execution_time:.3f}s")
-            return csv_data
+            logger.info(f"Retrieved {result.row_count} rows from table {table_name} "
+                        f"in {result.execution_time:.3f}s")
+            return result.to_tool_result()
 
         except DatabaseOperationError as e:
             error_msg = f"Database error getting data from table '{table_name}': {str(e)}"
             logger.error(error_msg)
-            return error_msg
+            return ToolResult(error_msg, is_error=True)
         except Exception as e:
             error_msg = f"Unexpected error getting data from table '{table_name}': {str(e)}"
             logger.error(error_msg)
-            return error_msg
+            return ToolResult(error_msg, is_error=True)
 
     @staticmethod
     async def test_connection() -> str:
